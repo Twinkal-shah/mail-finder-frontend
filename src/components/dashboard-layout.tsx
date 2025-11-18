@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { getProfileDataClient } from '@/lib/profile'
 import { OnboardingFlow } from '@/components/onboarding-flow'
+import { toast } from 'sonner'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -88,32 +89,89 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
   useEffect(() => {
     const handleFocus = async () => {
       try {
+        // Try to get user data from localStorage first
+        const userDataStr = localStorage.getItem('user_data')
+        if (userDataStr) {
+          const userData = JSON.parse(userDataStr)
+          
+          // Create profile from user data
+          const newUserProfile = {
+            full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
+            credits: 0, // Default credits for now
+            email: userData.email || '',
+            company: null,
+            plan: 'free',
+            plan_expiry: null,
+            credits_find: 0,
+            credits_verify: 0
+          }
+          setCurrentProfile(newUserProfile)
+          return
+        }
+        
+        // Fallback: try to fetch from backend
         const updatedProfile = await getProfileDataClient()
         if (updatedProfile) {
           const newUserProfile = {
             full_name: updatedProfile.full_name || updatedProfile.email?.split('@')[0] || 'User',
             credits: (updatedProfile.credits_find || 0) + (updatedProfile.credits_verify || 0),
-            email: updatedProfile.email,
-            company: updatedProfile.company,
-            plan: updatedProfile.plan,
-            plan_expiry: updatedProfile.plan_expiry,
-            credits_find: updatedProfile.credits_find,
-            credits_verify: updatedProfile.credits_verify
+            email: updatedProfile.email || '',
+            company: updatedProfile.company ?? null,
+            plan: updatedProfile.plan || 'free',
+            plan_expiry: updatedProfile.plan_expiry ?? null,
+            credits_find: updatedProfile.credits_find ?? 0,
+            credits_verify: updatedProfile.credits_verify ?? 0
           }
           setCurrentProfile(newUserProfile)
         }
-      } catch {
-        console.log('Failed to refresh profile data')
+      } catch (error) {
+        console.error('Failed to refresh profile data:', error)
       }
     }
+
+    // Also try to fetch profile immediately on mount
+    handleFocus()
 
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
   }, [])
 
   const handleSignOut = async () => {
-    // Mock sign out - redirect to marketing URL
-    router.push(`${process.env.NEXT_PUBLIC_MARKETING_URL || 'https://mailsfinder.com'}/login`)
+    try {
+      // Call logout API to clear server cookies
+      await fetch('/api/user/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      // Clear localStorage items
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user_data')
+      
+      // Clear any other potential auth-related items
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('refresh_token')
+      
+      // Clear sessionStorage redirect URL
+      sessionStorage.removeItem('redirect_after_login')
+      
+      // Show success toast
+      toast.success('Signed out successfully')
+      
+      // Redirect to login page after a short delay to show toast
+      setTimeout(() => {
+        router.push('/auth/login')
+      }, 1000)
+    } catch (error) {
+      console.error('Error during sign out:', error)
+      toast.error('Error signing out')
+      // Still redirect to login even if clearing storage fails
+      setTimeout(() => {
+        router.push('/auth/login')
+      }, 1000)
+    }
   }
 
   return (

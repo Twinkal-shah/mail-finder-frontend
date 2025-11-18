@@ -2,18 +2,52 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { getUserProfileWithCredits, getTransactionHistory, getCreditUsageHistory } from '@/app/(dashboard)/credits/actions'
+import { useEffect, useState } from 'react'
 
-// Hook for user profile with credits
+// Hook for user profile with credits - client-side version
 export function useUserProfile() {
-  return useQuery({
-    queryKey: ['userProfile'],
-    queryFn: getUserProfileWithCredits,
-    staleTime: 30 * 1000, // 30 seconds for more real-time updates
-    gcTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
-    refetchInterval: 60 * 1000, // Auto-refetch every minute for real-time updates
-    refetchIntervalInBackground: true, // Continue refetching even when tab is not active
-  })
+  const [profile, setProfile] = useState<{
+    id: string
+    email: string
+    full_name: string
+    plan: string
+    credits_find: number
+    credits_verify: number
+    total_credits: number
+  } | null>(null)
+  
+  useEffect(() => {
+    // Get user data from localStorage
+    const userDataStr = localStorage.getItem('user_data')
+    
+    if (userDataStr) {
+      try {
+        const userData = JSON.parse(userDataStr)
+        
+        // Create profile from user data
+        const userProfile = {
+          id: userData._id || userData.id,
+          email: userData.email || '',
+          full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
+          plan: 'free', // Default plan
+          credits_find: 0,
+          credits_verify: 0,
+          total_credits: 0
+        }
+        
+        setProfile(userProfile)
+      } catch (e) {
+        console.error('Error parsing user data from localStorage:', e)
+        // Fallback to server-side minimal profile
+        getUserProfileWithCredits().then(setProfile).catch(console.error)
+      }
+    } else {
+      // Fallback to server-side minimal profile
+      getUserProfileWithCredits().then(setProfile).catch(console.error)
+    }
+  }, [])
+  
+  return { data: profile }
 }
 
 // Hook for transaction history

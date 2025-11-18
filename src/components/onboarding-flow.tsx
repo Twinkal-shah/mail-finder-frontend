@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 import { Progress } from '@/components/ui/progress'
 import { X, ArrowRight, Search, CheckCircle, CreditCard, Star } from 'lucide-react'
-import { createClient } from '@/lib/supabase'
+// Removed Supabase dependency for onboarding checks
 
 interface OnboardingStep {
   id: string
@@ -60,36 +60,20 @@ export function OnboardingFlow({ userProfile }: OnboardingFlowProps) {
     }
   ])
   const router = useRouter()
-  const supabase = createClient()
+  // Use localStorage to track onboarding completion per user email
+  const storageKey = typeof window !== 'undefined' ? `onboardingCompleted:${userProfile.email}` : undefined
 
   // Check if user should see onboarding
   useEffect(() => {
-    const checkOnboardingStatus = async () => {
+    const checkOnboardingStatus = () => {
       try {
-        // Check if user has completed onboarding before
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('onboarding_completed')
-          .eq('email', userProfile.email)
-          .single()
-
-        if (error) {
-          console.error('Error checking onboarding status:', error)
-          // If column doesn't exist or other error, show onboarding for new users
-          // Only show for free plan users (likely new users)
-          if (userProfile.plan === 'free') {
-            setIsVisible(true)
-          }
-          return
-        }
-
-        // Show onboarding if not completed
-        if (!data?.onboarding_completed) {
+        // Prefer local flag; if not set, show for free plan users
+        const completed = storageKey ? localStorage.getItem(storageKey) === 'true' : false
+        if (!completed && userProfile.plan === 'free') {
           setIsVisible(true)
         }
       } catch (error) {
-        console.error('Error in checkOnboardingStatus:', error)
-        // Fallback: show onboarding for free plan users
+        // On any error, show for free plan users
         if (userProfile.plan === 'free') {
           setIsVisible(true)
         }
@@ -97,7 +81,7 @@ export function OnboardingFlow({ userProfile }: OnboardingFlowProps) {
     }
 
     checkOnboardingStatus()
-  }, [userProfile.email, userProfile.plan, supabase])
+  }, [userProfile.email, userProfile.plan, storageKey])
 
   const handleStepAction = (step: OnboardingStep) => {
     // Mark step as completed
@@ -116,28 +100,17 @@ export function OnboardingFlow({ userProfile }: OnboardingFlowProps) {
     }
   }
 
-  const completeOnboarding = async () => {
+  const completeOnboarding = () => {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ onboarding_completed: true })
-        .eq('email', userProfile.email)
-
-      if (error) {
-        console.error('Error marking onboarding complete:', error)
-        // If column doesn't exist, that's okay - user can still complete onboarding
+      if (storageKey) {
+        localStorage.setItem(storageKey, 'true')
       }
-      
-      setIsVisible(false)
-    } catch (error) {
-      console.error('Error in markOnboardingComplete:', error)
-      // Gracefully handle errors - don't prevent onboarding completion
-      setIsVisible(false)
-    }
+    } catch {}
+    setIsVisible(false)
   }
 
   const skipOnboarding = async () => {
-    await completeOnboarding()
+    completeOnboarding()
   }
 
   const progress = ((currentStep + 1) / steps.length) * 100

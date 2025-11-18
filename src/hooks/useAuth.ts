@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 interface AuthState {
@@ -33,15 +32,17 @@ export function useAuth() {
     lastAuthCheck = now
 
     try {
-      const supabase = createClient()
-      const { data: { user }, error } = await supabase.auth.getUser()
-      
-      if (error) {
-        console.error('Auth check error:', error.message)
-        setAuthState({ user: null, loading: false, error: error.message })
-      } else {
-        setAuthState({ user, loading: false, error: null })
+      const res = await fetch('http://localhost:8000/api/user/me', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        setAuthState({ user: null, loading: false, error: null })
+        return
       }
+      const backendUser = await res.json()
+      setAuthState({ user: backendUser as User, loading: false, error: null })
     } catch (error) {
       console.error('Auth check failed:', error)
       setAuthState({ 
@@ -55,46 +56,19 @@ export function useAuth() {
   }, [])
 
   useEffect(() => {
-    const supabase = createClient()
-    
-    // Initial auth check
     checkAuth()
-
-    // Listen for auth changes with debouncing
-    let timeoutId: NodeJS.Timeout
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('Auth state changed:', event)
-        
-        // Debounce auth state changes to prevent rapid updates
-        clearTimeout(timeoutId)
-        timeoutId = setTimeout(() => {
-          if (session?.user) {
-            setAuthState({ user: session.user, loading: false, error: null })
-          } else {
-            setAuthState({ user: null, loading: false, error: null })
-          }
-        }, 500)
-      }
-    )
-
-    return () => {
-      clearTimeout(timeoutId)
-      subscription.unsubscribe()
-    }
   }, [checkAuth])
 
   const signOut = useCallback(async () => {
     try {
-      const supabase = createClient()
-      await supabase.auth.signOut()
-      setAuthState({ user: null, loading: false, error: null })
+      await fetch('http://localhost:8000/api/user/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
     } catch (error) {
       console.error('Sign out error:', error)
-      setAuthState(prev => ({ 
-        ...prev, 
-        error: error instanceof Error ? error.message : 'Sign out failed' 
-      }))
+    } finally {
+      setAuthState({ user: null, loading: false, error: null })
     }
   }, [])
 
@@ -125,15 +99,20 @@ export function useGlobalAuth() {
     if (!globalAuthState) {
       const initAuth = async () => {
         try {
-          const supabase = createClient()
-          const { data: { user }, error } = await supabase.auth.getUser()
-          
-          const newState = {
-            user: error ? null : user,
-            loading: false,
-            error: error?.message || null
+          const res = await fetch('http://localhost:8000/api/user/me', {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+          })
+          let user: User | null = null
+          if (res.ok) {
+            user = await res.json()
           }
-          
+          const newState = {
+            user,
+            loading: false,
+            error: null
+          }
           globalAuthState = newState
           authStateListeners.forEach(l => l(newState))
         } catch (error) {

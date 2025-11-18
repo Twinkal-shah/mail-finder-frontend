@@ -3,7 +3,7 @@
 import { getCurrentUser } from '@/lib/auth'
 import { getUserCredits } from '@/lib/profile-server'
 import { getCreditTransactions } from '@/lib/auth'
-import { createServerActionClient } from '@/lib/supabase'
+import { apiGet } from '@/lib/api'
 import { LemonSqueezyWebhookEvent } from '@/lib/services/lemonsqueezy'
 
 interface CreditUsage {
@@ -22,28 +22,18 @@ interface UserMetadata {
 
 // Get user profile with credits breakdown
 export async function getUserProfileWithCredits() {
-  const user = await getCurrentUser()
-  if (!user) {
-    return null
-  }
-
-  const creditsData = await getUserCredits(user.id)
-  if (!creditsData) {
-    return null
-  }
-
-  // Get additional profile data including plan from profiles table
-  const { getProfileData } = await import('@/lib/profile')
-  const profileData = await getProfileData(user.id)
-
+  // For client-side auth, we'll return a minimal profile
+  // The client will update this with actual user data
+  
+  // Return a basic profile structure that the client can enhance
   return {
-    id: user.id,
-    email: user.email || '',
-    full_name: profileData?.full_name || (user as { user_metadata?: UserMetadata }).user_metadata?.full_name || null,
-    plan: profileData?.plan || 'free',
-    credits_find: creditsData.find,
-    credits_verify: creditsData.verify,
-    total_credits: creditsData.total
+    id: 'client-user',
+    email: '',
+    full_name: null,
+    plan: 'free',
+    credits_find: 0,
+    credits_verify: 0,
+    total_credits: 0
   }
 }
 
@@ -53,74 +43,31 @@ export async function getCreditUsageHistory(): Promise<CreditUsage[]> {
     if (!user) {
       return []
     }
-
-    const supabase = await createServerActionClient()
-    
-    // Get credit usage from the last 30 days
+    // Get credit usage from the last 30 days via backend transactions
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    
-    // Query credit_transactions table for actual credit usage (negative amounts)
-    try {
-      const { data: creditTransactions, error } = await supabase
-        .from('credit_transactions')
-        .select('created_at, amount, operation')
-        .eq('user_id', user.id)
-        .lt('amount', 0) // Only get credit deductions (negative amounts)
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .order('created_at', { ascending: true })
 
-      if (!error && creditTransactions) {
-        // Group transactions by date and sum the usage (convert negative amounts to positive)
-        const usageByDate: { [key: string]: number } = {}
-        
-        creditTransactions.forEach((transaction: CreditTransaction) => {
-          const date = new Date(transaction.created_at).toISOString().split('T')[0]
-          const creditsUsed = Math.abs(transaction.amount) // Convert negative to positive
-          usageByDate[date] = (usageByDate[date] || 0) + creditsUsed
-        })
-
-        // Convert to array format and fill missing dates with 0
-        const result: CreditUsage[] = []
-        const currentDate = new Date(thirtyDaysAgo)
-        const today = new Date()
-        
-        while (currentDate <= today) {
-          const dateStr = currentDate.toISOString().split('T')[0]
-          result.push({
-            date: dateStr,
-            credits_used: usageByDate[dateStr] || 0
-          })
-          currentDate.setDate(currentDate.getDate() + 1)
-        }
-
-        return result
-      } else if (error) {
-        console.error('Error querying credit_transactions:', error)
-      }
-    } catch (dbError) {
-      console.error('Database error when querying credit_transactions:', dbError)
-    }
-
-    // Fallback: Return mock data if credit_transactions table doesn't exist yet
-    // This will be used until the database setup in SETUP_CREDIT_TRACKING.md is completed
-    const result: CreditUsage[] = []
-    const currentDate = new Date(thirtyDaysAgo)
-    const today = new Date()
-    
-    // Generate mock usage data for demonstration
-    while (currentDate <= today) {
-      const dateStr = currentDate.toISOString().split('T')[0]
-      // Generate some realistic mock usage (0-50 credits per day)
-      const mockUsage = Math.floor(Math.random() * 51)
-      result.push({
-        date: dateStr,
-        credits_used: mockUsage
+    const res = await apiGet<CreditTransaction[]>('/api/user/credits/transactions', { useProxy: true })
+    if (res.ok && Array.isArray(res.data)) {
+      const usageByDate: { [key: string]: number } = {}
+      ;(res.data as CreditTransaction[]).forEach((tx) => {
+        const date = new Date(tx.created_at).toISOString().split('T')[0]
+        const creditsUsed = Math.abs(Number(tx.amount))
+        usageByDate[date] = (usageByDate[date] || 0) + (isNaN(creditsUsed) ? 0 : creditsUsed)
       })
-      currentDate.setDate(currentDate.getDate() + 1)
+
+      const result: CreditUsage[] = []
+      const currentDate = new Date(thirtyDaysAgo)
+      const today = new Date()
+      while (currentDate <= today) {
+        const dateStr = currentDate.toISOString().split('T')[0]
+        result.push({ date: dateStr, credits_used: usageByDate[dateStr] || 0 })
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+      return result
     }
 
-    return result
+    return []
   } catch (error) {
     console.error('Error in getCreditUsageHistory:', error)
     return []
@@ -247,49 +194,14 @@ export async function createLemonSqueezyPortal() {
   if (!user) {
     throw new Error('User not authenticated')
   }
-  
-  // Get user's profile including plan information
-  const supabase = await createServerActionClient()
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('lemonsqueezy_customer_id, plan')
-    .eq('id', user.id)
-    .single()
-  
+  // Get user's profile including plan information from backend
+  const profRes = await apiGet<any>('/api/user/profile/getProfile', { useProxy: true })
+  const profile = profRes.ok ? (profRes.data as any) : null
   // Check if user is on free plan
   if (profile?.plan === 'free') {
     throw new Error('You are currently on the Free Plan. Billing management is available only on paid plans. 👉 Upgrade to our Agency or Lifetime plan to unlock billing and advanced features.')
   }
-  
   let customerId = profile?.lemonsqueezy_customer_id
-  
-  // If no customer ID in profile, try to find it from transaction history
-  if (!customerId) {
-    const { data: transactions } = await supabase
-      .from('transactions')
-      .select('metadata')
-      .eq('user_id', user.id)
-      .not('metadata', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(10)
-    
-    // Look for customer ID in transaction metadata
-    for (const transaction of transactions || []) {
-      const transactionCustomerId = transaction.metadata?.event_data?.customer_id || 
-                                   transaction.metadata?.customer_id
-      if (transactionCustomerId) {
-        customerId = transactionCustomerId
-        
-        // Update profile with found customer ID
-        await supabase
-          .from('profiles')
-          .update({ lemonsqueezy_customer_id: customerId })
-          .eq('id', user.id)
-        
-        break
-      }
-    }
-  }
   
   if (!customerId) {
     throw new Error('No billing information found. Please make a purchase first to access billing management.')

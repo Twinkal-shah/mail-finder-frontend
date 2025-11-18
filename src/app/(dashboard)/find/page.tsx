@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Search, Mail, CheckCircle, Clock } from 'lucide-react'
 import { findEmail as findEmailAction } from './actions'
+import { isAuthenticated, saveRedirectUrl } from '@/lib/auth'
 
 interface EmailResult {
   email: string | null
@@ -31,6 +33,17 @@ export default function FindPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<EmailResult | null>(null)
   const [history, setHistory] = useState<SearchHistoryItem[]>([])
+  const router = useRouter()
+
+  // Check authentication on component mount
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      // Save current URL for redirect after login
+      saveRedirectUrl(window.location.pathname + window.location.search)
+      // Redirect to login page
+      router.push('/auth/login')
+    }
+  }, [router])
 
   const handleSubmit = async (formData: FormData) => {
     const fullName = formData.get('fullName') as string

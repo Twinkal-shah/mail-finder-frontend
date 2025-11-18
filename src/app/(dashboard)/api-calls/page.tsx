@@ -43,6 +43,15 @@ import { ResponseViewer } from '@/components/api-testing/response-viewer'
 // Predefined endpoints for testing
 const PREDEFINED_ENDPOINTS: PredefinedEndpoint[] = [
   {
+    name: 'Ping',
+    method: 'GET',
+    url: '/api/ping',
+    description: 'Simple connectivity check via Next.js rewrite to backend',
+    headers: [
+      { id: '1', key: 'Accept', value: 'text/plain', enabled: true }
+    ]
+  },
+  {
     name: 'Health Check',
     method: 'GET',
     url: '/api/health',
@@ -54,15 +63,41 @@ const PREDEFINED_ENDPOINTS: PredefinedEndpoint[] = [
   {
     name: 'User Login',
     method: 'POST',
-    url: '/api/auth/login',
-    description: 'Authenticate user with email and password',
+    url: '/api/user/login',
+    description: 'Login via same-origin proxy. Returns tokens and user (no password).',
     headers: [
       { id: '1', key: 'Content-Type', value: 'application/json', enabled: true }
     ],
     body: JSON.stringify({
-      email: 'user@example.com',
-      password: 'password123'
+      email: 'someone@example.com',
+      password: 'password'
     }, null, 2)
+  },
+  {
+    name: 'User Signup (Proxied)',
+    method: 'POST',
+    url: process.env.NEXT_PUBLIC_BACKEND_SIGNUP_PATH || '/api/user/signup',
+    description: 'Create account via backend proxied path. Required fields: email, password, firstName, lastName, phone. Set NEXT_PUBLIC_BACKEND_SIGNUP_PATH to override.',
+    headers: [
+      { id: '1', key: 'Content-Type', value: 'application/json', enabled: true }
+    ],
+    body: JSON.stringify({
+      email: 'someone@example.com',
+      password: 'password',
+      firstName: 'John',
+      lastName: 'Doe',
+      phone: '+1234567890',
+      company: 'Acme Inc'
+    }, null, 2)
+  },
+  {
+    name: 'User Me (Proxied)',
+    method: 'GET',
+    url: '/api/user/me',
+    description: 'Get current user using backend session/cookies to confirm login works.',
+    headers: [
+      { id: '1', key: 'Accept', value: 'application/json', enabled: true }
+    ]
   },
   {
     name: 'Find Email',
@@ -188,10 +223,16 @@ export default function ApiCallsPage() {
     }
 
     try {
-      new URL(state.currentRequest.url.startsWith('http') 
-        ? state.currentRequest.url 
-        : `${window.location.origin}${state.currentRequest.url}`
-      )
+      const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || window.location.origin).replace(/\/$/, '')
+      const isAbsolute = state.currentRequest.url.startsWith('http')
+      const relativePath = state.currentRequest.url.startsWith('/')
+        ? state.currentRequest.url
+        : `/${state.currentRequest.url}`
+      const useSameOrigin = !isAbsolute && relativePath.startsWith('/api/')
+      const urlToValidate = isAbsolute
+        ? state.currentRequest.url
+        : `${useSameOrigin ? window.location.origin : baseUrl}${relativePath}`
+      new URL(urlToValidate)
     } catch {
       toast.error('Invalid URL format')
       return false
@@ -234,9 +275,15 @@ export default function ApiCallsPage() {
       }
 
       // Make the request
-      const fullUrl = state.currentRequest.url.startsWith('http') 
+      const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || window.location.origin).replace(/\/$/, '')
+      const isAbsolute = state.currentRequest.url.startsWith('http')
+      const relativePath = state.currentRequest.url.startsWith('/') 
         ? state.currentRequest.url 
-        : `${window.location.origin}${state.currentRequest.url}`
+        : `/${state.currentRequest.url}`
+      const useSameOrigin = !isAbsolute && relativePath.startsWith('/api/')
+      const fullUrl = isAbsolute 
+        ? state.currentRequest.url 
+        : `${useSameOrigin ? window.location.origin : baseUrl}${relativePath}`
 
       const response = await fetch(fullUrl, requestOptions)
       

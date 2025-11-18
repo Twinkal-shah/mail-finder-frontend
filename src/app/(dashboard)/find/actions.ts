@@ -1,7 +1,7 @@
 'use server'
 
 import { deductCredits, getCurrentUser, isPlanExpired } from '@/lib/auth'
-import { createServerActionClient } from '@/lib/supabase'
+import { getUserCredits } from '@/lib/profile-server'
 import { revalidatePath } from 'next/cache'
 import { findEmail as findEmailService, type EmailFinderRequest } from '@/lib/services/email-finder'
 
@@ -46,22 +46,15 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
       }
     }
 
-    // Check if user has Find Credits specifically
-    const supabase = await createServerActionClient()
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('credits_find')
-      .eq('id', user.id)
-      .single()
-    
-    if (profileError || !profile) {
+    // Check if user has Find Credits via backend
+    const credits = await getUserCredits(user.id)
+    if (!credits) {
       return {
         success: false,
         error: 'Failed to check your credits. Please try again.'
       }
     }
-    
-    if ((profile.credits_find || 0) === 0) {
+    if ((credits.find || 0) === 0) {
       return {
         success: false,
         error: "You don't have enough Find Credits to perform this action. Please purchase more credits."

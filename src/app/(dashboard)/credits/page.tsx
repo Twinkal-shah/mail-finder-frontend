@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, memo } from 'react'
+import { useState, useMemo, memo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +10,7 @@ import { Coins, CreditCard, ExternalLink, History, TrendingUp, Calendar, CheckCi
 import { createLemonSqueezyCheckout, createCustomCreditCheckout, createLemonSqueezyPortal } from './actions'
 import { useCreditsData } from '@/hooks/useCreditsData'
 import { Line } from 'react-chartjs-2'
+import { isAuthenticated, saveRedirectUrl } from '@/lib/auth'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -91,6 +92,16 @@ function CreditsPageComponent() {
   const [isCreatingPortal, setIsCreatingPortal] = useState(false)
   const router = useRouter()
   
+  // Check authentication on component mount
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      // Save current URL for redirect after login
+      saveRedirectUrl(window.location.pathname + window.location.search)
+      // Redirect to login page
+      router.push('/auth/login')
+    }
+  }, [router])
+  
   // Use React Query for data fetching with caching
   const { profile, transactions, creditUsage, isLoading, isError, error } = useCreditsData()
   
@@ -138,12 +149,8 @@ function CreditsPageComponent() {
     }
   }), [])
   
-  // Handle profile not found
-  if (!isLoading && !profile && !isError) {
-    toast.error('Profile not found. Redirecting to profile setup...')
-    router.push('/init-profile')
-    return null
-  }
+  // If profile is missing, continue rendering without redirect.
+  // The UI below guards profile-dependent sections and will show defaults.
   
   // Handle errors
   if (isError) {
@@ -506,6 +513,8 @@ function CreditsPageComponent() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+
+      
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Credits & Billing</h1>
         <p className="text-gray-600 mt-2">
