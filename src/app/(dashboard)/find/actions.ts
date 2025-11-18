@@ -72,18 +72,31 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
     
     // Deduct credits for all search attempts (found, not_found, but not error)
     if (result.status === 'found' || result.status === 'not_found') {
-      // Update user credits directly
-      const supabaseClient = await createServerClient()
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update({ 
-          credits_find: credits.find - 1,
-          updated_at: new Date().toISOString()
+      // Update user credits via backend API
+      try {
+        const deductResponse = await fetch('/api/user/credits/deduct', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: 1,
+            type: 'find',
+            operation: 'email_find',
+            metadata: {
+              email: result.email,
+              confidence: result.confidence,
+              status: result.status
+            }
+          })
         })
-        .eq('id', user.id)
-      
-      if (updateError) {
-        console.error('Failed to deduct credits:', updateError)
+        
+        if (!deductResponse.ok) {
+          console.error('Failed to deduct credits via backend:', await deductResponse.text())
+          // Continue anyway - the email was found successfully
+        }
+      } catch (error) {
+        console.error('Error deducting credits:', error)
         // Continue anyway - the email was found successfully
       }
     }

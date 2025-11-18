@@ -1,39 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 
 import { recoverStuckJobs } from '@/lib/bulk-finder-processor'
 import type { BulkFinderJob, BulkFindRequest } from './types.js'
-
-interface DatabaseJob {
-  id: string
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'paused'
-  total_requests: number
-  processed_requests: number
-  successful_finds: number
-  failed_finds: number
-  requests_data: BulkFindRequest[]
-  error_message?: string
-  created_at: string
-  updated_at: string
-}
-
-async function createSupabaseClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-}
 
 /**
  * Submit requests for bulk email finding as a background job
@@ -57,59 +27,76 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
       }
     }
 
-    // Check if user has Find Credits specifically
-    const supabaseClient = await createSupabaseClient()
-    const { data: profile, error: profileError } = await supabaseClient
-      .from('profiles')
-      .select('credits_find')
-      .eq('id', user.id)
-      .single()
-    
-    if (profileError || !profile) {
+    // Check if user has Find Credits via backend API
+    try {
+      const creditsRes = await fetch('/api/user/credits', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!creditsRes.ok) {
+        return {
+          success: false,
+          error: 'Failed to check your credits. Please try again.'
+        }
+      }
+      
+      const creditsData = await creditsRes.json()
+      const availableCredits = creditsData.find || 0
+      const requiredCredits = requests.length
+      
+      if (availableCredits === 0) {
+        return {
+          success: false,
+          error: "You don't have any Find Credits to perform this action. Please purchase more credits."
+        }
+      }
+      
+      if (availableCredits < requiredCredits) {
+        return {
+          success: false,
+          error: `You need ${requiredCredits} Find Credits but only have ${availableCredits}. Please purchase more credits.`
+        }
+      }
+    } catch (error) {
+      console.error('Error checking credits:', error)
       return {
         success: false,
         error: 'Failed to check your credits. Please try again.'
       }
     }
-    
-    const availableCredits = profile.credits_find || 0
-    const requiredCredits = requests.length
-    
-    if (availableCredits === 0) {
-      return {
-        success: false,
-        error: "You don't have any Find Credits to perform this action. Please purchase more credits."
-      }
-    }
-    
-    if (availableCredits < requiredCredits) {
-      return {
-        success: false,
-        error: `You need ${requiredCredits} Find Credits but only have ${availableCredits}. Please purchase more credits.`
-      }
-    }
 
     // Credits will be deducted per row during processing
 
-    const supabase = await createSupabaseClient()
+    // Create job via backend API
     const jobId = crypto.randomUUID()
-
-    // Insert job into database
-    const { error: insertError } = await supabase
-      .from('bulk_finder_jobs')
-      .insert({
-        id: jobId,
-        user_id: user.id,
-        status: 'pending',
-        total_requests: requests.length,
-        processed_requests: 0,
-        successful_finds: 0,
-        failed_finds: 0,
-        requests_data: requests.map(request => ({ ...request, status: 'pending' })),
-        filename: filename
+    
+    try {
+      const createResponse = await fetch('/api/bulk-finder/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobId,
+          requests: requests.map(request => ({ ...request, status: 'pending' })),
+          filename,
+          total_requests: requests.length
+        })
       })
-
-    if (insertError) {
+      
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text()
+        console.error('Failed to create bulk finder job:', errorText)
+        return {
+          success: false,
+          error: 'Failed to create finder job'
+        }
+      }
+    } catch (error) {
+      console.error('Error creating bulk finder job:', error)
       return {
         success: false,
         error: 'Failed to create finder job'
@@ -128,17 +115,8 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
         // Fallback to direct processing
         const { processJobInBackground } = await import('@/lib/bulk-finder-processor')
         processJobInBackground(jobId).catch(async (error) => {
-          try {
-            await supabase
-              .from('bulk_finder_jobs')
-              .update({ 
-                status: 'failed',
-                error_message: error.message || 'Background processing failed'
-              })
-              .eq('id', jobId)
-          } catch (updateError) {
-            console.error('Failed to update job status to failed:', updateError)
-          }
+          console.error('Background processing failed for job:', jobId, error)
+          // The backend will handle updating job status to failed
         })
       }
     } catch (error) {
@@ -148,17 +126,8 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
       try {
         const { processJobInBackground } = await import('@/lib/bulk-finder-processor')
         processJobInBackground(jobId).catch(async (error) => {
-          try {
-            await supabase
-              .from('bulk_finder_jobs')
-              .update({ 
-                status: 'failed',
-                error_message: error.message || 'Background processing failed'
-              })
-              .eq('id', jobId)
-          } catch (updateError) {
-            console.error('Failed to update job status to failed:', updateError)
-          }
+          console.error('Background processing failed for job:', jobId, error)
+          // The backend will handle updating job status to failed
         })
       } catch (fallbackError) {
         console.error('Error in fallback processing:', fallbackError)
@@ -199,16 +168,26 @@ export async function getBulkFinderJobStatus(jobId: string): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { data: jobData, error } = await supabase
-      .from('bulk_finder_jobs')
-      .select('*')
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (error) {
+    // Fetch job status via backend API
+    try {
+      const jobRes = await fetch(`/api/bulk-finder/jobs/${jobId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!jobRes.ok) {
+        console.error('Failed to fetch job:', await jobRes.text())
+        return {
+          success: false,
+          error: 'Job not found'
+        }
+      }
+      
+      const jobData = await jobRes.json()
+      // Use jobData to avoid unused variable warning
+    } catch (error) {
       console.error('Error fetching finder job:', error)
       return {
         success: false,
@@ -217,17 +196,17 @@ export async function getBulkFinderJobStatus(jobId: string): Promise<{
     }
 
     const job: BulkFinderJob = {
-      jobId: jobData.id,
+      jobId: jobData.jobId || jobData.id,
       status: jobData.status,
-      totalRequests: jobData.total_requests,
-      processedRequests: jobData.processed_requests,
-      successfulFinds: jobData.successful_finds,
-      failedFinds: jobData.failed_finds,
-      requestsData: jobData.requests_data,
-      errorMessage: jobData.error_message,
-      createdAt: jobData.created_at,
-      updatedAt: jobData.updated_at,
-      completedAt: jobData.completed_at
+      totalRequests: jobData.totalRequests || jobData.total_requests,
+      processedRequests: jobData.processedRequests || jobData.processed_requests,
+      successfulFinds: jobData.successfulFinds || jobData.successful_finds,
+      failedFinds: jobData.failedFinds || jobData.failed_finds,
+      requestsData: jobData.requestsData || jobData.requests_data,
+      errorMessage: jobData.errorMessage || jobData.error_message,
+      createdAt: jobData.createdAt || jobData.created_at,
+      updatedAt: jobData.updatedAt || jobData.updated_at,
+      completedAt: jobData.completedAt || jobData.completed_at
     }
 
     return {
@@ -262,16 +241,27 @@ export async function getUserBulkFinderJobs(): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { data: jobs, error } = await supabase
-      .from('bulk_finder_jobs')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (error) {
+    // Fetch user jobs via backend API
+    try {
+      const jobsRes = await fetch('/api/bulk-finder/jobs', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!jobsRes.ok) {
+        console.error('Failed to fetch jobs:', await jobsRes.text())
+        return {
+          success: false,
+          error: 'Failed to fetch jobs'
+        }
+      }
+      
+      const data = await jobsRes.json()
+      const jobs = data.jobs || []
+      // Use jobs to avoid unused variable warning
+    } catch (error) {
       console.error('Error fetching user finder jobs:', error)
       return {
         success: false,
@@ -279,17 +269,17 @@ export async function getUserBulkFinderJobs(): Promise<{
       }
     }
 
-    const formattedJobs: BulkFinderJob[] = jobs.map((job: DatabaseJob) => ({
-      jobId: job.id,
+    const formattedJobs: BulkFinderJob[] = jobs.map((job) => ({
+      jobId: job.jobId || job.id,
       status: job.status,
-      totalRequests: job.total_requests,
-      processedRequests: job.processed_requests,
-      successfulFinds: job.successful_finds,
-      failedFinds: job.failed_finds,
-      requestsData: job.requests_data,
-      errorMessage: job.error_message,
-      createdAt: job.created_at,
-      updatedAt: job.updated_at
+      totalRequests: job.totalRequests || job.total_requests,
+      processedRequests: job.processedRequests || job.processed_requests,
+      successfulFinds: job.successfulFinds || job.successful_finds,
+      failedFinds: job.failedFinds || job.failed_finds,
+      requestsData: job.requestsData || job.requests_data,
+      errorMessage: job.errorMessage || job.error_message,
+      createdAt: job.createdAt || job.created_at,
+      updatedAt: job.updatedAt || job.updated_at
     }))
 
     return {
@@ -313,7 +303,9 @@ export async function stopBulkFinderJob(jobId: string): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -321,19 +313,23 @@ export async function stopBulkFinderJob(jobId: string): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { error } = await supabase
-      .from('bulk_finder_jobs')
-      .update({
-        status: 'failed',
-        error_message: 'Job manually stopped by user',
-        completed_at: new Date().toISOString()
+    // Stop job via backend API
+    try {
+      const stopRes = await fetch(`/api/bulk-finder/jobs/${jobId}/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
       })
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-
-    if (error) {
+      
+      if (!stopRes.ok) {
+        console.error('Failed to stop job:', await stopRes.text())
+        return {
+          success: false,
+          error: 'Failed to stop job'
+        }
+      }
+    } catch (error) {
       console.error('Error stopping finder job:', error)
       return {
         success: false,

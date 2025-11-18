@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyEmail, type EmailVerifierRequest } from '@/lib/services/email-verifier'
-import { checkCredits, deductCredits, isPlanExpired } from '@/lib/auth'
 
 interface VerifyEmailRequest {
   email: string
@@ -28,13 +27,27 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Check if plan has expired
-    const planExpired = await isPlanExpired()
-    if (planExpired) {
-      return NextResponse.json(
-        { error: 'Your plan has expired. Please upgrade to Pro.' },
-        { status: 403 }
-      )
+    // Check if plan has expired via backend API
+    try {
+      const profileRes = await fetch('/api/user/profile/getProfile', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (profileRes.ok) {
+        const profile = await profileRes.json()
+        if (profile.plan_expired) {
+          return NextResponse.json(
+            { error: 'Your plan has expired. Please upgrade to Pro.' },
+            { status: 403 }
+          )
+        }
+      }
+    } catch (error) {
+      console.error('Error checking plan status:', error)
+      // Continue with credit check even if plan check fails
     }
 
     // Parse request body
@@ -66,12 +79,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if user has sufficient credits
-    const availableCredits = await checkCredits(1)
-    if (availableCredits < 1) {
+    // Check if user has sufficient credits via backend API
+    try {
+      const creditsRes = await fetch('/api/user/credits', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (creditsRes.ok) {
+        const creditsData = await creditsRes.json()
+        const availableCredits = creditsData.verify || 0
+        if (availableCredits < 1) {
+          return NextResponse.json(
+            { error: 'Insufficient verify credits' },
+            { status: 402 }
+          )
+        }
+      } else {
+        console.error('Failed to check credits:', await creditsRes.text())
+        return NextResponse.json(
+          { error: 'Failed to check credits' },
+          { status: 500 }
+        )
+      }
+    } catch (error) {
+      console.error('Error checking credits:', error)
       return NextResponse.json(
-        { error: 'Insufficient verify credits' },
-        { status: 402 }
+        { error: 'Failed to check credits' },
+        { status: 500 }
       )
     }
 
@@ -83,26 +120,28 @@ export async function POST(request: NextRequest) {
     // Call email verification service
     const serviceResult = await verifyEmail(verificationRequest)
 
-    // Deduct credits after successful verification
-    // await deductCredits(1, 'email_verification')
-      // Deduct credits after successful verification
-
-        try {
-      console.log('About to call deductCredits with:', {
-        amount: 1,
-        type: 'email_verify',
-        metadata: {
-          email: body.email,
-          result: serviceResult.status
-        }
+    // Deduct credits after successful verification via backend API
+    try {
+      const deductResponse = await fetch('/api/user/credits/deduct', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: 1,
+          type: 'verify',
+          operation: 'email_verify',
+          metadata: {
+            email: body.email,
+            result: serviceResult.status
+          }
+        })
       })
-
-    await deductCredits(1, 'email_verify', {
-      email: body.email,
-      result: serviceResult.status
-    })
-
-      console.log('deductCredits completed successfully')
+      
+      if (!deductResponse.ok) {
+        console.error('Failed to deduct credits via backend:', await deductResponse.text())
+        // Don't fail the entire request if credit deduction fails
+      }
     } catch (deductError) {
       console.error('Error in deductCredits:', deductError)
       // Don't fail the entire request if credit deduction fails

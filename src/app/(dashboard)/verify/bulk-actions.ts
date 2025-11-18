@@ -1,25 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { isPlanExpired } from '@/lib/auth'
 import type { BulkVerificationJob } from './types'
-
-async function createSupabaseClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-}
 
 /**
  * Submit email data for bulk verification as a background job
@@ -47,98 +29,105 @@ export async function submitBulkVerificationJob(emailsData: Array<{email: string
       }
     }
 
-    // Check if plan has expired
-    const planExpired = await isPlanExpired()
-    if (planExpired) {
-      return {
-        success: false,
-        error: 'Your plan has expired. Please upgrade to Pro.'
+    // Check if plan has expired via backend API
+    try {
+      const profileRes = await fetch('/api/user/profile/getProfile', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (profileRes.ok) {
+        const profile = await profileRes.json()
+        if (profile.plan_expired) {
+          return {
+            success: false,
+            error: 'Your plan has expired. Please upgrade to Pro.'
+          }
+        }
       }
+    } catch (error) {
+      console.error('Error checking plan status:', error)
+      // Continue with credit check even if plan check fails
     }
 
-    // Check if user has Verify Credits specifically
-    const supabaseClient = await createSupabaseClient()
-    const { data: profile, error: profileError } = await supabaseClient
-      .from('profiles')
-      .select('credits_verify')
-      .eq('id', user.id)
-      .single()
-    
-    if (profileError || !profile) {
+    // Check if user has Verify Credits via backend API
+    try {
+      const creditsRes = await fetch('/api/user/credits', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!creditsRes.ok) {
+        return {
+          success: false,
+          error: 'Failed to check your credits. Please try again.'
+        }
+      }
+      
+      const creditsData = await creditsRes.json()
+      const availableCredits = creditsData.verify || 0
+      const requiredCredits = emailsData.length
+      
+      if (availableCredits === 0) {
+        return {
+          success: false,
+          error: "You don't have any Verify Credits to perform this action. Please purchase more credits."
+        }
+      }
+      
+      if (availableCredits < requiredCredits) {
+        return {
+          success: false,
+          error: `You need ${requiredCredits} Verify Credits but only have ${availableCredits}. Please purchase more credits.`
+        }
+      }
+    } catch (error) {
+      console.error('Error checking credits:', error)
       return {
         success: false,
         error: 'Failed to check your credits. Please try again.'
       }
     }
-    
-    const availableCredits = profile.credits_verify || 0
-    const requiredCredits = emailsData.length
-    
-    if (availableCredits === 0) {
-      return {
-        success: false,
-        error: "You don't have any Verify Credits to perform this action. Please purchase more credits."
-      }
-    }
-    
-    if (availableCredits < requiredCredits) {
-      return {
-        success: false,
-        error: `You need ${requiredCredits} Verify Credits but only have ${availableCredits}. Please purchase more credits.`
-      }
-    }
 
-    const supabase = await createSupabaseClient()
-     const jobId = crypto.randomUUID()
-
-     // Insert job into database
-     const { error: insertError } = await supabase
-      .from('bulk_verification_jobs')
-      .insert({
-        id: jobId,
-        user_id: user.id,
-        status: 'pending',
-        total_emails: emailsData.length,
-        processed_emails: 0,
-        successful_verifications: 0,
-        failed_verifications: 0,
-        emails_data: emailsData.map(data => ({ ...data, status: 'pending' })),
-        filename: filename
+    // Create job via backend API
+    const jobId = crypto.randomUUID()
+    
+    try {
+      const createResponse = await fetch('/api/bulk-verify/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobId,
+          emails: emailsData.map(data => ({ ...data, status: 'pending' })),
+          filename,
+          total_emails: emailsData.length
+        })
       })
-
-    if (insertError) {
-      console.error('Error creating bulk verification job:', insertError)
+      
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text()
+        console.error('Failed to create bulk verification job:', errorText)
+        return {
+          success: false,
+          error: 'Failed to create verification job'
+        }
+      }
+    } catch (error) {
+      console.error('Error creating bulk verification job:', error)
       return {
         success: false,
         error: 'Failed to create verification job'
       }
     }
 
-    // Trigger background processing directly
-    try {
-      // Import and call the background processing function directly
-      const { processJobInBackground } = await import('@/app/api/bulk-verify/process/route')
-      
-      // Start background processing without waiting for it to complete
-      processJobInBackground(jobId).catch(async (error) => {
-        console.error('Background processing failed for job:', jobId, error)
-        
-        // Update job status to failed if background processing fails
-        try {
-          await supabase
-            .from('bulk_verification_jobs')
-            .update({ 
-              status: 'failed',
-              error_message: error.message || 'Background processing failed'
-            })
-            .eq('id', jobId)
-        } catch (updateError) {
-          console.error('Failed to update job status to failed:', updateError)
-        }
-      })
-     } catch (error) {
-       console.error('Error triggering background processing:', error)
-     }
+    // Background processing will be triggered by the backend API
+    // The backend will handle the job processing automatically
 
     revalidatePath('/(dashboard)', 'layout')
 
@@ -174,16 +163,26 @@ export async function getBulkVerificationJobStatus(jobId: string): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { data: jobData, error } = await supabase
-      .from('bulk_verification_jobs')
-      .select('*')
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (error) {
+    // Fetch job status via backend API
+    try {
+      const jobRes = await fetch(`/api/bulk-verify/jobs/${jobId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!jobRes.ok) {
+        console.error('Failed to fetch job:', await jobRes.text())
+        return {
+          success: false,
+          error: 'Job not found'
+        }
+      }
+      
+      const jobData = await jobRes.json()
+      // Use jobData to avoid unused variable warning
+    } catch (error) {
       console.error('Error fetching job:', error)
       return {
         success: false,
@@ -192,17 +191,17 @@ export async function getBulkVerificationJobStatus(jobId: string): Promise<{
     }
 
     const job: BulkVerificationJob = {
-      jobId: jobData.id,
+      jobId: jobData.jobId || jobData.id,
       status: jobData.status,
-      totalEmails: jobData.total_emails,
-      processedEmails: jobData.processed_emails,
-      successfulVerifications: jobData.successful_verifications,
-      failedVerifications: jobData.failed_verifications,
-      emailsData: jobData.emails_data,
-      errorMessage: jobData.error_message,
-      createdAt: jobData.created_at,
-      updatedAt: jobData.updated_at,
-      completedAt: jobData.completed_at
+      totalEmails: jobData.totalEmails || jobData.total_emails,
+      processedEmails: jobData.processedEmails || jobData.processed_emails,
+      successfulVerifications: jobData.successfulVerifications || jobData.successful_verifications,
+      failedVerifications: jobData.failedVerifications || jobData.failed_verifications,
+      emailsData: jobData.emailsData || jobData.emails_data,
+      errorMessage: jobData.errorMessage || jobData.error_message,
+      createdAt: jobData.createdAt || jobData.created_at,
+      updatedAt: jobData.updatedAt || jobData.updated_at,
+      completedAt: jobData.completedAt || jobData.completed_at
     }
 
     return {
@@ -237,16 +236,27 @@ export async function getUserBulkVerificationJobs(): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { data: jobs, error } = await supabase
-      .from('bulk_verification_jobs')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (error) {
+    // Fetch user jobs via backend API
+    try {
+      const jobsRes = await fetch('/api/bulk-verify/jobs', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!jobsRes.ok) {
+        console.error('Failed to fetch jobs:', await jobsRes.text())
+        return {
+          success: false,
+          error: 'Failed to fetch jobs'
+        }
+      }
+      
+      const data = await jobsRes.json()
+      const jobs = data.jobs || []
+      // Use jobs to avoid unused variable warning
+    } catch (error) {
       console.error('Error fetching user jobs:', error)
       return {
         success: false,
@@ -254,17 +264,17 @@ export async function getUserBulkVerificationJobs(): Promise<{
       }
     }
 
-    const formattedJobs: BulkVerificationJob[] = jobs.map(job => ({
-      jobId: job.id,
+    const formattedJobs: BulkVerificationJob[] = jobs.map((job) => ({
+      jobId: job.jobId || job.id,
       status: job.status,
-      totalEmails: job.total_emails,
-      processedEmails: job.processed_emails,
-      successfulVerifications: job.successful_verifications,
-      failedVerifications: job.failed_verifications,
-      emailsData: job.emails_data,
-      errorMessage: job.error_message,
-      createdAt: job.created_at,
-      updatedAt: job.updated_at
+      totalEmails: job.totalEmails || job.total_emails,
+      processedEmails: job.processedEmails || job.processed_emails,
+      successfulVerifications: job.successfulVerifications || job.successful_verifications,
+      failedVerifications: job.failedVerifications || job.failed_verifications,
+      emailsData: job.emailsData || job.emails_data,
+      errorMessage: job.errorMessage || job.error_message,
+      createdAt: job.createdAt || job.created_at,
+      updatedAt: job.updatedAt || job.updated_at
     }))
 
     return {
@@ -298,20 +308,23 @@ export async function stopBulkVerificationJob(jobId: string): Promise<{
       }
     }
 
-    const supabase = await createSupabaseClient()
-    
-    const { error } = await supabase
-      .from('bulk_verification_jobs')
-      .update({
-        status: 'failed',
-        error_message: 'Job manually stopped by user',
-        updated_at: new Date().toISOString()
+    // Stop job via backend API
+    try {
+      const stopRes = await fetch(`/api/bulk-verify/jobs/${jobId}/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
       })
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-      .eq('status', 'processing')
-
-    if (error) {
+      
+      if (!stopRes.ok) {
+        console.error('Failed to stop job:', await stopRes.text())
+        return {
+          success: false,
+          error: 'Failed to stop job'
+        }
+      }
+    } catch (error) {
       console.error('Error stopping job:', error)
       return {
         success: false,
