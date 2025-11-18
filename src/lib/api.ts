@@ -3,7 +3,7 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
 interface RequestOptions {
   method?: HttpMethod
   headers?: Record<string, string>
-  body?: any
+  body?: string | Record<string, unknown> | FormData
   useProxy?: boolean
   includeAuth?: boolean
   token?: string | null
@@ -41,7 +41,7 @@ function resolveUrl(path: string, useProxy?: boolean): string {
   return `${base}${p}`
 }
 
-export async function apiRequest<T = any>(path: string, options: RequestOptions = {}): Promise<{ ok: boolean; status: number; data?: T; error?: any }> {
+export async function apiRequest<T = unknown>(path: string, options: RequestOptions = {}): Promise<{ ok: boolean; status: number; data?: T; error?: string | Record<string, unknown> }> {
   const {
     method = 'GET',
     headers = {},
@@ -77,7 +77,7 @@ export async function apiRequest<T = any>(path: string, options: RequestOptions 
   // Read body once to avoid "Body is unusable" errors on server
   const contentType = res.headers.get('content-type') || ''
   const rawText = await res.text()
-  let data: any = undefined
+  let data: unknown = undefined
   if (contentType.includes('application/json')) {
     try {
       data = JSON.parse(rawText)
@@ -89,21 +89,21 @@ export async function apiRequest<T = any>(path: string, options: RequestOptions 
   if (!res.ok) {
     return { ok: false, status: res.status, error: data ?? rawText }
   }
-  return { ok: true, status: res.status, data: data ?? (rawText as any) }
+  return { ok: true, status: res.status, data: data ?? rawText }
 }
 
-export async function apiGet<T = any>(path: string, opts: Omit<RequestOptions, 'method' | 'body'> = {}) {
+export async function apiGet<T = unknown>(path: string, opts: Omit<RequestOptions, 'method' | 'body'> = {}) {
   return apiRequest<T>(path, { ...opts, method: 'GET' })
 }
 
-export async function apiPost<T = any>(path: string, body?: any, opts: Omit<RequestOptions, 'method'> = {}) {
+export async function apiPost<T = unknown>(path: string, body?: string | Record<string, unknown> | FormData, opts: Omit<RequestOptions, 'method'> = {}) {
   return apiRequest<T>(path, { ...opts, method: 'POST', body })
 }
 
-export async function apiPut<T = any>(path: string, body?: any, opts: Omit<RequestOptions, 'method'> = {}) {
+export async function apiPut<T = unknown>(path: string, body?: string | Record<string, unknown> | FormData, opts: Omit<RequestOptions, 'method'> = {}) {
   return apiRequest<T>(path, { ...opts, method: 'PUT', body })
 }
 
-export async function apiDelete<T = any>(path: string, opts: Omit<RequestOptions, 'method' | 'body'> = {}) {
+export async function apiDelete<T = unknown>(path: string, opts: Omit<RequestOptions, 'method' | 'body'> = {}) {
   return apiRequest<T>(path, { ...opts, method: 'DELETE' })
 }

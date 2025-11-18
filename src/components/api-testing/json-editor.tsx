@@ -36,7 +36,7 @@ export function JsonEditor({
       JSON.parse(value)
       setIsValid(true)
       setError(null)
-    } catch (err) {
+    } catch {
       setIsValid(false)
       setError(err instanceof Error ? err.message : 'Invalid JSON')
     }
@@ -47,7 +47,7 @@ export function JsonEditor({
       const parsed = JSON.parse(value)
       const formatted = JSON.stringify(parsed, null, 2)
       onChange(formatted)
-    } catch (err) {
+    } catch {
       // If parsing fails, don't change the value
     }
   }
@@ -57,7 +57,7 @@ export function JsonEditor({
       const parsed = JSON.parse(value)
       const minified = JSON.stringify(parsed)
       onChange(minified)
-    } catch (err) {
+    } catch {
       // If parsing fails, don't change the value
     }
   }

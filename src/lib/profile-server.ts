@@ -11,7 +11,7 @@ type Profile = {
 }
 
 // Initialize user credits for new users (server-side only)
-export async function initializeUserCredits(userId: string): Promise<boolean> {
+export async function initializeUserCredits(): Promise<boolean> {
   try {
     // If you want to initialize credits for a new user on backend,
     // implement it there; for now, no client-side action needed.
@@ -23,7 +23,7 @@ export async function initializeUserCredits(userId: string): Promise<boolean> {
 }
 
 // Update profile function for server-side operations
-export async function updateProfile(userId: string, updates: Partial<Profile>): Promise<Profile | null> {
+export async function updateProfile(updates: Partial<Profile>): Promise<Profile | null> {
   try {
     const res = await apiPut<Profile>('/api/user/profile/updateProfile', updates, { useProxy: true })
     if (!res.ok || !res.data) return null
@@ -35,15 +35,23 @@ export async function updateProfile(userId: string, updates: Partial<Profile>): 
 }
 
 // Get user credits breakdown (server-side)
-export async function getUserCredits(userId: string): Promise<{
+export async function getUserCredits(): Promise<{
   total: number
   find: number
   verify: number
 } | null> {
   try {
-    const res = await apiGet<any>('/api/user/credits', { useProxy: true })
+    interface CreditsResponse {
+      credits_find?: number
+      find?: number
+      findCredits?: number
+      credits_verify?: number
+      verify?: number
+      verifyCredits?: number
+    }
+    const res = await apiGet<CreditsResponse>('/api/user/credits', { useProxy: true })
     if (!res.ok || !res.data) return null
-    const d = res.data as any
+    const d = res.data
     const find = Number(d.credits_find ?? d.find ?? d.findCredits ?? 0)
     const verify = Number(d.credits_verify ?? d.verify ?? d.verifyCredits ?? 0)
     return {

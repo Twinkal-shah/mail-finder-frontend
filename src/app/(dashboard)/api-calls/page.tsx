@@ -9,21 +9,14 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { 
-  Play, 
-  Copy, 
   Download, 
   Upload, 
   Trash2, 
   Plus, 
   Minus, 
-  Clock, 
-  AlertCircle, 
-  CheckCircle,
+  AlertCircle,
   History,
-  Settings,
-  Code,
   Send
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -330,7 +323,6 @@ export default function ApiCallsPage() {
       toast.success(`Request completed in ${apiResponse.duration}ms`)
 
     } catch (error) {
-      const endTime = Date.now()
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
 
       // Add to history with error
@@ -394,7 +386,7 @@ export default function ApiCallsPage() {
         const importedHistory = JSON.parse(e.target?.result as string)
         setState(prev => ({ ...prev, history: importedHistory }))
         toast.success('History imported successfully')
-      } catch (error) {
+      } catch {
         toast.error('Failed to import history: Invalid file format')
       }
     }

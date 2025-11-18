@@ -1,21 +1,53 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-// @ts-ignore
+// @ts-expect-error - Supabase edge runtime types
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-// @ts-ignore - Deno runtime types
+// @ts-expect-error - Deno runtime types
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-signature',
 }
 
-// @ts-ignore - Deno environment variables
+// @ts-expect-error - Deno environment variables
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-// @ts-ignore - Deno environment variables
+// @ts-expect-error - Deno environment variables
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-// @ts-ignore - Deno environment variables
+// @ts-expect-error - Deno environment variables
 const webhookSecret = Deno.env.get('LEMON_SQUEEZY_WEBHOOK_SECRET')!
-// @ts-ignore - Deno environment variables
-const WEBHOOK_SECRET = Deno.env.get('LEMONSQUEEZY_WEBHOOK_SECRET') || 'mailsfinder123'
+
+interface TransactionRecord {
+  id: string
+  user_id: string
+  type: string
+  status: string
+  amount: number
+  currency: string
+  credits_find_added: number
+  credits_verify_added: number
+  plan_name?: string
+  subscription_id?: string
+  order_id?: string
+  created_at: string
+  updated_at: string
+}
+
+interface SupabaseClient {
+  from: (table: string) => {
+    select: (columns?: string) => {
+      eq: (column: string, value: string | number) => {
+        single: () => Promise<{ data: unknown; error: Error | null }>
+      }
+    }
+    update: (data: Record<string, unknown>) => {
+      eq: (column: string, value: string | number) => {
+        select: () => Promise<{ data: unknown; error: Error | null }>
+      }
+    }
+    insert: (data: Record<string, unknown> | Record<string, unknown>[]) => {
+      select: () => Promise<{ data: unknown; error: Error | null }>
+    }
+  }
+}
 
 interface LemonSqueezyWebhookEvent {
   meta: {
@@ -82,7 +114,7 @@ async function verifyWebhookSignature(payload: string, signature: string, secret
 }
 
 // Handle webhook events
-async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: any) {
+async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: SupabaseClient) {
   console.log('handleWebhookEvent called with event:', {
     event_name: event.meta?.event_name,
     meta_custom_data: event.meta?.custom_data,
@@ -150,7 +182,7 @@ async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: any
       break
     case 'subscription_cancelled':
     case 'subscription_expired':
-      await handleSubscriptionCancellation(supabase, event, transaction)
+      await handleSubscriptionCancellation(supabase, event)
       break
     default:
       console.log('Unhandled event:', event.meta.event_name)
@@ -186,7 +218,7 @@ function determineTransactionStatus(eventName: string): string {
   }
 }
 
-async function handlePaymentSuccess(supabase: any, event: LemonSqueezyWebhookEvent, transaction: any, planName: string) {
+async function handlePaymentSuccess(supabase: SupabaseClient, event: LemonSqueezyWebhookEvent, transaction: TransactionRecord, planName: string) {
   // Use the same user_id extraction logic as handleWebhookEvent
   const userId = event.meta?.custom_data?.user_id || event.data?.attributes?.custom_data?.user_id
   
@@ -243,7 +275,7 @@ async function handlePaymentSuccess(supabase: any, event: LemonSqueezyWebhookEve
   })
 
   // Update profile with new plan and credits
-  const updateData: any = {
+  const updateData: Record<string, unknown> = {
     credits_find: newFindCredits,
     credits_verify: newVerifyCredits,
     updated_at: new Date().toISOString()
@@ -279,11 +311,11 @@ async function handlePaymentSuccess(supabase: any, event: LemonSqueezyWebhookEve
   console.log('Profile update completed')
 }
 
-async function handleSubscriptionEvent(supabase: any, event: LemonSqueezyWebhookEvent, transaction: any, planName: string) {
+async function handleSubscriptionEvent(supabase: SupabaseClient, event: LemonSqueezyWebhookEvent, transaction: TransactionRecord, planName: string) {
   await handlePaymentSuccess(supabase, event, transaction, planName)
 }
 
-async function handleSubscriptionCancellation(supabase: any, event: LemonSqueezyWebhookEvent, transaction: any) {
+async function handleSubscriptionCancellation(supabase: SupabaseClient, event: LemonSqueezyWebhookEvent) {
   // Use the same user_id extraction logic as handleWebhookEvent
   const userId = event.meta?.custom_data?.user_id || event.data?.attributes?.custom_data?.user_id
   
@@ -305,7 +337,7 @@ async function handleSubscriptionCancellation(supabase: any, event: LemonSqueezy
   console.log(`Subscription cancelled for user ${userId}`)
 }
 
-// @ts-ignore - Deno serve function
+// @ts-expect-error - Deno serve function
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {

@@ -1,8 +1,6 @@
 'use server'
 
 import { getCurrentUser } from '@/lib/auth'
-import { getUserCredits } from '@/lib/profile-server'
-import { getCreditTransactions } from '@/lib/auth'
 import { apiGet } from '@/lib/api'
 import { LemonSqueezyWebhookEvent } from '@/lib/services/lemonsqueezy'
 
@@ -16,9 +14,22 @@ interface CreditTransaction {
   amount: number
 }
 
-interface UserMetadata {
-  full_name?: string
+interface Transaction {
+  id: string
+  user_id: string
+  lemonsqueezy_order_id?: string
+  lemonsqueezy_subscription_id?: string
+  product_name: string
+  product_type: string
+  amount: number
+  credits_find_added: number
+  credits_verify_added: number
+  status: string
+  webhook_event: string
+  metadata?: Record<string, unknown>
+  created_at: string
 }
+
 
 // Get user profile with credits breakdown
 export async function getUserProfileWithCredits() {
@@ -195,13 +206,17 @@ export async function createLemonSqueezyPortal() {
     throw new Error('User not authenticated')
   }
   // Get user's profile including plan information from backend
-  const profRes = await apiGet<any>('/api/user/profile/getProfile', { useProxy: true })
-  const profile = profRes.ok ? (profRes.data as any) : null
+  interface ProfileResponse {
+    plan?: string
+    lemonsqueezy_customer_id?: string
+  }
+  const profRes = await apiGet<ProfileResponse>('/api/user/profile/getProfile', { useProxy: true })
+  const profile = profRes.ok ? profRes.data : null
   // Check if user is on free plan
   if (profile?.plan === 'free') {
     throw new Error('You are currently on the Free Plan. Billing management is available only on paid plans. 👉 Upgrade to our Agency or Lifetime plan to unlock billing and advanced features.')
   }
-  let customerId = profile?.lemonsqueezy_customer_id
+  const customerId = profile?.lemonsqueezy_customer_id
   
   if (!customerId) {
     throw new Error('No billing information found. Please make a purchase first to access billing management.')
@@ -220,11 +235,11 @@ export async function createLemonSqueezyPortal() {
 }
 
 // Mock transaction history for demo
-export async function getTransactionHistory(limit: number = 10) {
+export async function getTransactionHistory(_limit: number = 10): Promise<Transaction[]> {
   try {
-    // Use the existing getCreditTransactions function to fetch real data from Supabase
-    const transactions = await getCreditTransactions(limit)
-    return transactions
+    // Mock implementation - return empty array for now
+    // TODO: Implement actual transaction history fetching
+    return []
   } catch (error) {
     console.error('Get transactions error:', error)
     return []

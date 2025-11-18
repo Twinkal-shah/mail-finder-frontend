@@ -72,7 +72,7 @@ export function OnboardingFlow({ userProfile }: OnboardingFlowProps) {
         if (!completed && userProfile.plan === 'free') {
           setIsVisible(true)
         }
-      } catch (error) {
+      } catch {
         // On any error, show for free plan users
         if (userProfile.plan === 'free') {
           setIsVisible(true)

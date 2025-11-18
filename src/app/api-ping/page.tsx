@@ -28,7 +28,7 @@ export default function ApiPingPage() {
           } else {
             setDetails(`Failed ${res.status}: ${text} on ${url}`)
           }
-        } catch (e: any) {
+        } catch (e: Error | unknown) {
           setDetails(`Network/CORS error on ${url}: ${e?.message || e}`)
         }
       }

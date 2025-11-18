@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,7 +87,7 @@ export default function LoginPage() {
       // Other errors
       const msg = errorMsg || `HTTP ${res.status}`
       return { ok: false, error: msg }
-    } catch (e: any) {
+    } catch (e: Error | unknown) {
       console.error('Signup error:', e)
       return { ok: false, error: e?.message || 'Network error' }
     }

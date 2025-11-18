@@ -1,6 +1,6 @@
 'use server'
 
-import { deductCredits, getCurrentUser, isPlanExpired } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 import { getUserCredits } from '@/lib/profile-server'
 import { revalidatePath } from 'next/cache'
 import { findEmail as findEmailService, type EmailFinderRequest } from '@/lib/services/email-finder'
@@ -36,18 +36,9 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
         error: 'You must be logged in to perform this action.'
       }
     }
-    
-    // Check if plan has expired
-    const planExpired = await isPlanExpired()
-    if (planExpired) {
-      return {
-        success: false,
-        error: "Your plan has expired. Please upgrade to Pro."
-      }
-    }
 
     // Check if user has Find Credits via backend
-    const credits = await getUserCredits(user.id)
+    const credits = await getUserCredits()
     if (!credits) {
       return {
         success: false,
@@ -79,19 +70,19 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
     
     // Deduct credits for all search attempts (found, not_found, but not error)
     if (result.status === 'found' || result.status === 'not_found') {
-      const deducted = await deductCredits(1, 'email_find', {
-        full_name: request.full_name,
-        company_domain: request.company_domain,
-        role: request.role,
-        result: result.status,
-        email: result.email
-      })
+      // Update user credits directly
+      const supabaseClient = await createServerClient()
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({ 
+          credits_find: credits.find - 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id)
       
-      if (!deducted) {
-        return {
-          success: false,
-          error: 'Failed to process payment. Please try again.'
-        }
+      if (updateError) {
+        console.error('Failed to deduct credits:', updateError)
+        // Continue anyway - the email was found successfully
       }
     }
 

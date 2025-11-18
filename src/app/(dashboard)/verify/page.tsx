@@ -118,7 +118,8 @@ export default function VerifyPage() {
     }
     
     poll()
-  }, [setCurrentJob, setProgress, setProcessedCount, setRows, setIsProcessing, invalidateCreditsData])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load user's bulk verification jobs
   const loadUserJobs = useCallback(async () => {

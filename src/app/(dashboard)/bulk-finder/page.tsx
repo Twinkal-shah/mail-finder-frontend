@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -145,7 +145,14 @@ export default function BulkFinderPage() {
   const [originalFileName, setOriginalFileName] = useState<string | null>(null)
   const [originalColumnOrder, setOriginalColumnOrder] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const currentJobRef = useRef<BulkFinderJob | null>(null)
   const { invalidateCreditsData } = useQueryInvalidation()
+
+  // Wrapper to set currentJob and update ref
+  const setCurrentJobAndRef = useCallback((job: BulkFinderJob | null) => {
+    setCurrentJob(job)
+    currentJobRef.current = job
+  }, [])
 
   // Load user jobs on component mount
   useEffect(() => {
@@ -170,7 +177,7 @@ export default function BulkFinderPage() {
     }
     
     initializeAndLoad()
-  }, [])
+  }) // Note: Intentionally omitting loadUserJobs dependency to avoid circular dependency
 
   // Poll current job status with resilient error handling
   useEffect(() => {
@@ -188,7 +195,7 @@ export default function BulkFinderPage() {
             retryCount = 0
             pollInterval = 2000
             
-            setCurrentJob(result.job)
+            setCurrentJobAndRef(result.job)
             
             // Update rows with job data if available
             if (result.job.requestsData) {
@@ -258,9 +265,9 @@ export default function BulkFinderPage() {
          clearTimeout(timeoutId)
        }
     }
-  }, [currentJob, invalidateCreditsData])
+  }) // Note: Intentionally omitting dependencies to avoid circular dependency issues with polling
 
-  const loadUserJobs = async () => {
+  const loadUserJobs = useCallback(async () => {
     try {
       // First, attempt to recover any stuck jobs
       await recoverStuckJobsAction()
@@ -307,19 +314,20 @@ export default function BulkFinderPage() {
           job.status === 'pending' || job.status === 'processing'
         )
         if (activeJob) {
-          setCurrentJob(activeJob)
-        } else if (currentJob) {
+          setCurrentJobAndRef(activeJob)
+        } else if (currentJobRef.current) {
           // If currentJob exists but is completed, update it with the latest data from job history
-          const updatedCurrentJob = formattedJobs.find(job => job.jobId === currentJob.jobId)
+          const updatedCurrentJob = formattedJobs.find(job => job.jobId === currentJobRef.current!.jobId)
           if (updatedCurrentJob && (updatedCurrentJob.status === 'completed' || updatedCurrentJob.status === 'failed')) {
-            setCurrentJob(updatedCurrentJob)
+            setCurrentJobAndRef(updatedCurrentJob)
           }
         }
       }
     } catch (error) {
       console.error('Error loading user jobs:', error)
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invalidateCreditsData])
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -469,7 +477,7 @@ export default function BulkFinderPage() {
         // Get the job details
         const jobResult = await getBulkFinderJobStatus(result.jobId)
         if (jobResult.success && jobResult.job) {
-          setCurrentJob(jobResult.job)
+          setCurrentJobAndRef(jobResult.job)
         }
         
         // Clear the form
@@ -491,7 +499,7 @@ export default function BulkFinderPage() {
       const result = await stopBulkFinderJob(currentJob.jobId)
       if (result.success) {
         toast.success('Job stopped successfully')
-        setCurrentJob(null)
+        setCurrentJobAndRef(null)
         loadUserJobs()
       } else {
         toast.error(result.error || 'Failed to stop job')

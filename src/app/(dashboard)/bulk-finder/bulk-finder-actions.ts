@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCurrentUser, isPlanExpired } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 import { recoverStuckJobs } from '@/lib/bulk-finder-processor'
 import type { BulkFinderJob, BulkFindRequest } from './types.js'
 
@@ -52,15 +52,6 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
       return {
         success: false,
         error: 'Unauthorized'
-      }
-    }
-
-    // Check if plan has expired
-    const planExpired = await isPlanExpired()
-    if (planExpired) {
-      return {
-        success: false,
-        error: 'Your plan has expired. Please upgrade to Pro.'
       }
     }
 

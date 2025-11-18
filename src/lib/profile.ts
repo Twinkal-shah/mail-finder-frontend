@@ -12,7 +12,7 @@ export type Profile = {
   lemonsqueezy_customer_id?: string | null
 }
 
-export async function getProfileData(userId: string): Promise<Profile | null> {
+export async function getProfileData(): Promise<Profile | null> {
   const res = await apiGet<Profile>('/api/user/profile/getProfile', { useProxy: true })
   if (!res.ok || !res.data) return null
   return res.data as Profile
