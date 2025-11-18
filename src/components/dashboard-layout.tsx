@@ -91,38 +91,87 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
       try {
         // Try to get user data from localStorage first
         const userDataStr = localStorage.getItem('user_data')
-        if (userDataStr) {
-          const userData = JSON.parse(userDataStr)
-          
-          // Create profile from user data
-          const newUserProfile = {
-            full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
-            credits: 0, // Default credits for now
-            email: userData.email || '',
-            company: null,
-            plan: 'free',
-            plan_expiry: null,
-            credits_find: 0,
-            credits_verify: 0
+        console.log('Client-side user data from localStorage:', userDataStr)
+        
+        if (userDataStr && userDataStr !== 'undefined' && userDataStr !== 'null') {
+          try {
+            const userData = JSON.parse(userDataStr)
+            console.log('Parsed user data:', userData)
+            
+            // Create profile from user data - handle backend user structure
+            // Backend returns: { id, email, firstName, lastName }
+            // Frontend expects: { full_name, email, credits, etc. }
+            const newUserProfile = {
+              full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.full_name || userData.email?.split('@')[0] || 'User',
+              credits: (userData.credits_find || 0) + (userData.credits_verify || 0),
+              email: userData.email || 'user@example.com',
+              company: userData.company || null,
+              plan: userData.plan || 'free',
+              plan_expiry: userData.plan_expiry || null,
+              credits_find: userData.credits_find || 0,
+              credits_verify: userData.credits_verify || 0
+            }
+            console.log('New user profile from localStorage:', newUserProfile)
+            setCurrentProfile(newUserProfile)
+            
+            // Also fetch full profile from backend to get credits and other details
+            try {
+              const updatedProfile = await getProfileDataClient()
+              if (updatedProfile) {
+                const fullUserProfile = {
+                  full_name: updatedProfile.full_name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
+                  credits: (updatedProfile.credits_find || 0) + (updatedProfile.credits_verify || 0),
+                  email: updatedProfile.email || userData.email || '',
+                  company: updatedProfile.company ?? userData.company ?? null,
+                  plan: updatedProfile.plan || userData.plan || 'free',
+                  plan_expiry: updatedProfile.plan_expiry ?? userData.plan_expiry ?? null,
+                  credits_find: updatedProfile.credits_find ?? userData.credits_find ?? 0,
+                  credits_verify: updatedProfile.credits_verify ?? userData.credits_verify ?? 0
+                }
+                console.log('Full user profile from backend:', fullUserProfile)
+                setCurrentProfile(fullUserProfile)
+              }
+            } catch (backendError) {
+              console.error('Failed to fetch full profile from backend:', backendError)
+            }
+            return
+          } catch (parseError) {
+            console.error('Error parsing user data from localStorage:', parseError)
           }
-          setCurrentProfile(newUserProfile)
-          return
+        } else {
+          console.log('No user_data found in localStorage')
         }
         
         // Fallback: try to fetch from backend
+        console.log('Trying to fetch profile from backend...')
         const updatedProfile = await getProfileDataClient()
+        console.log('Backend profile result:', updatedProfile)
         if (updatedProfile) {
           const newUserProfile = {
             full_name: updatedProfile.full_name || updatedProfile.email?.split('@')[0] || 'User',
             credits: (updatedProfile.credits_find || 0) + (updatedProfile.credits_verify || 0),
-            email: updatedProfile.email || '',
+            email: updatedProfile.email || 'user@example.com',
             company: updatedProfile.company ?? null,
             plan: updatedProfile.plan || 'free',
             plan_expiry: updatedProfile.plan_expiry ?? null,
             credits_find: updatedProfile.credits_find ?? 0,
             credits_verify: updatedProfile.credits_verify ?? 0
           }
+          console.log('Setting profile from backend:', newUserProfile)
           setCurrentProfile(newUserProfile)
+        } else {
+          console.log('No profile data from backend either - user may need to log in')
+          // Set a minimal profile indicating user needs to log in
+          setCurrentProfile({
+            full_name: 'Guest User',
+            credits: 0,
+            email: 'Please log in to access features',
+            company: null,
+            plan: 'free',
+            plan_expiry: null,
+            credits_find: 0,
+            credits_verify: 0
+          })
         }
       } catch (error) {
         console.error('Failed to refresh profile data:', error)
@@ -130,6 +179,7 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
     }
 
     // Also try to fetch profile immediately on mount
+    console.log('Dashboard layout mounted, fetching profile...')
     handleFocus()
 
     window.addEventListener('focus', handleFocus)

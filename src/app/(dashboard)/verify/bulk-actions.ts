@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCurrentUser, isPlanExpired } from '@/lib/auth'
+import { isPlanExpired } from '@/lib/auth'
 import type { BulkVerificationJob } from './types'
 
 async function createSupabaseClient() {
@@ -37,7 +37,9 @@ export async function submitBulkVerificationJob(emailsData: Array<{email: string
       }
     }
 
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -162,7 +164,9 @@ export async function getBulkVerificationJobStatus(jobId: string): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -223,7 +227,9 @@ export async function getUserBulkVerificationJobs(): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -282,7 +288,9 @@ export async function stopBulkVerificationJob(jobId: string): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,

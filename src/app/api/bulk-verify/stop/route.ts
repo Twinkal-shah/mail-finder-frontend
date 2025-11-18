@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/auth'
 import { createServerClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -20,7 +19,9 @@ function createServiceClient() {
 export async function POST() {
   try {
     // Get current user for authorization
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized' },

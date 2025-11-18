@@ -33,24 +33,54 @@ interface Transaction {
 
 // Get user profile with credits breakdown
 export async function getUserProfileWithCredits() {
-  // For client-side auth, we'll return a minimal profile
-  // The client will update this with actual user data
-  
-  // Return a basic profile structure that the client can enhance
-  return {
-    id: 'client-user',
-    email: '',
-    full_name: null,
-    plan: 'free',
-    credits_find: 0,
-    credits_verify: 0,
-    total_credits: 0
+  try {
+    // For server-side, we'll use the auth-server functions
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
+    
+    if (!user) {
+      console.log('No user found in cookies for getUserProfileWithCredits')
+      return {
+        id: 'client-user',
+        email: '',
+        full_name: null,
+        plan: 'free',
+        credits_find: 0,
+        credits_verify: 0,
+        total_credits: 0
+      }
+    }
+    
+    // Map user data from cookies to profile structure
+    return {
+      id: user.id || user._id || 'client-user',
+      email: user.email || '',
+      full_name: user.full_name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email?.split('@')[0] || null,
+      plan: user.plan || 'free',
+      credits_find: user.credits_find || 0,
+      credits_verify: user.credits_verify || 0,
+      total_credits: (user.credits_find || 0) + (user.credits_verify || 0)
+    }
+  } catch (error) {
+    console.error('Error fetching user profile:', error)
+    // Return minimal profile on error
+    return {
+      id: 'client-user',
+      email: '',
+      full_name: null,
+      plan: 'free',
+      credits_find: 0,
+      credits_verify: 0,
+      total_credits: 0
+    }
   }
 }
 
 export async function getCreditUsageHistory(): Promise<CreditUsage[]> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return []
     }

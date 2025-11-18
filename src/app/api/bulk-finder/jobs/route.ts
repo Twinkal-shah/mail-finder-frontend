@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCurrentUser } from '@/lib/auth'
 import { processJobInBackground } from '@/lib/bulk-finder-processor'
 
 async function createSupabaseClient() {
@@ -22,7 +21,9 @@ async function createSupabaseClient() {
 // GET endpoint to fetch user bulk finder jobs
 export async function GET() {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       console.log('GET bulk finder jobs - No authenticated user found')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -52,7 +53,9 @@ export async function GET() {
 // POST endpoint for background processing
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       console.log('POST bulk finder jobs - No authenticated user found')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

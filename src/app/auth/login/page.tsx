@@ -33,8 +33,26 @@ export default function LoginPage() {
         setError((res.error && (res.error.message || res.error.error)) || `Login failed (${res.status})`)
         return
       }
-      // Backend returns { accessToken, user }
-      const { accessToken, user } = res.data as { accessToken: string; user: { id: string; email: string, firstName?: string, lastName?: string } }
+      // Handle different backend response formats
+      let accessToken, user
+      
+      // Check for your backend format: { data: { user, access_token } }
+      if (res.data.data && res.data.data.user && res.data.data.access_token) {
+        accessToken = res.data.data.access_token
+        user = res.data.data.user
+        console.log('Detected your backend format with data wrapper')
+      }
+      // Check for standard format: { accessToken, user }
+      else if (res.data.accessToken && res.data.user) {
+        accessToken = res.data.accessToken
+        user = res.data.user
+        console.log('Detected standard format')
+      }
+      
+      if (!accessToken || !user) {
+        setError('Invalid login response format')
+        return
+      }
       
       // Store in localStorage
       try {
@@ -44,15 +62,13 @@ export default function LoginPage() {
         console.error('Error storing in localStorage:', e)
       }
       
-      console.log('Redirecting to /find')
+      console.log('Login successful, redirecting...')
       
-      // Check if there's a redirect URL saved
-      const redirectUrl = getRedirectUrl()
-      const targetUrl = redirectUrl || '/find'
+      // Force a page reload to ensure auth state is updated
+      setTimeout(() => {
+        window.location.href = '/find'
+      }, 100)
       
-      console.log('Redirecting to:', targetUrl)
-      // Use window.location for reliable redirect
-      window.location.href = targetUrl
     } catch (e: unknown) {
       console.error('Login error:', e)
       setError(e instanceof Error ? e.message : 'Network error')
@@ -61,10 +77,28 @@ export default function LoginPage() {
     }
   }
 
-  const registerInBackend = async (payload: { email: string; password: string; firstName: string; lastName: string; phone: string; company?: string | null }) => {
+  const registerInBackend = async (payload: { email: string; password: string; full_name: string; phone?: string; company?: string | null }) => {
     try {
+      // Create minimal payload - include required fields only to avoid "additional properties" error
+      const minimalPayload: any = {
+        email: payload.email,
+        password: payload.password,
+        full_name: payload.full_name // This is required by backend
+      };
+      
+      // Only add optional fields if they exist and have values
+      if (payload.phone && payload.phone.trim() !== '') {
+        minimalPayload.phone = payload.phone;
+      }
+      
+      if (payload.company && payload.company.trim() !== '') {
+        minimalPayload.company = payload.company;
+      }
+      
+      console.log('Sending minimal signup payload:', minimalPayload);
+      
       // Use apiPost helper for consistency
-      const res = await apiPost('/api/user/auth/signup', payload, { includeAuth: false })
+      const res = await apiPost('/api/user/auth/signup', minimalPayload, { includeAuth: false })
       console.log('Signup API response:', res)
       
       if (res.ok && res.data) {
@@ -100,19 +134,18 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
-        // Register only in backend
-        const nameParts = fullName.trim().split(/\s+/)
-        const firstName = nameParts[0] || ''
-        const lastName = nameParts.slice(1).join(' ') || ''
-        console.log('Attempting signup with:', { email, firstName, lastName, phone: phone.trim() })
-        const backendResult = await registerInBackend({
-          email,
-          password,
-          firstName,
-          lastName,
-          phone: phone.trim(),
-          company: company || null
-        })
+        // Register only in backend - include full_name as it's required
+        console.log('Attempting signup with:', { email, fullName })
+        
+        // Backend requires full_name, so include it
+        const testPayload = {
+          email: email.trim(),
+          password: password,
+          full_name: fullName.trim()
+        };
+        
+        console.log('Testing signup payload with full_name:', testPayload);
+        const backendResult = await registerInBackend(testPayload)
         console.log('Signup result:', backendResult)
         if (!backendResult.ok) {
           setError(`Backend registration failed: ${backendResult.error}`)

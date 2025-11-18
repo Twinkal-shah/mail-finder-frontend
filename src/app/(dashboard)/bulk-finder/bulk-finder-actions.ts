@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCurrentUser } from '@/lib/auth'
+
 import { recoverStuckJobs } from '@/lib/bulk-finder-processor'
 import type { BulkFinderJob, BulkFindRequest } from './types.js'
 
@@ -47,7 +47,9 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
       }
     }
 
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -187,7 +189,9 @@ export async function getBulkFinderJobStatus(jobId: string): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,
@@ -248,7 +252,9 @@ export async function getUserBulkFinderJobs(): Promise<{
   error?: string
 }> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     if (!user) {
       return {
         success: false,

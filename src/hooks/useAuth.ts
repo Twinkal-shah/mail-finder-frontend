@@ -32,7 +32,8 @@ export function useAuth() {
     lastAuthCheck = now
 
     try {
-      const res = await fetch('http://localhost:8000/api/user/me', {
+      // Use the Next.js API route instead of direct backend call
+      const res = await fetch('/api/user/me', {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
@@ -61,13 +62,18 @@ export function useAuth() {
 
   const signOut = useCallback(async () => {
     try {
-      await fetch('http://localhost:8000/api/user/auth/logout', {
+      await fetch('/api/user/auth/logout', {
         method: 'POST',
         credentials: 'include',
       })
     } catch (error) {
       console.error('Sign out error:', error)
     } finally {
+      // Clear localStorage as well
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('user_data')
+      }
       setAuthState({ user: null, loading: false, error: null })
     }
   }, [])
@@ -99,7 +105,7 @@ export function useGlobalAuth() {
     if (!globalAuthState) {
       const initAuth = async () => {
         try {
-          const res = await fetch('http://localhost:8000/api/user/me', {
+          const res = await fetch('/api/user/me', {
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',

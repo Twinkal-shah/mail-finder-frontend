@@ -20,19 +20,19 @@ export function useUserProfile() {
     // Get user data from localStorage
     const userDataStr = localStorage.getItem('user_data')
     
-    if (userDataStr) {
+    if (userDataStr && userDataStr !== 'undefined' && userDataStr !== 'null') {
       try {
         const userData = JSON.parse(userDataStr)
         
-        // Create profile from user data
+        // Create profile from user data - handle backend user structure
         const userProfile = {
           id: userData._id || userData.id,
           email: userData.email || '',
-          full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
-          plan: 'free', // Default plan
-          credits_find: 0,
-          credits_verify: 0,
-          total_credits: 0
+          full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.full_name || userData.email?.split('@')[0] || 'User',
+          plan: userData.plan || 'free', // Default plan
+          credits_find: userData.credits_find || 0,
+          credits_verify: userData.credits_verify || 0,
+          total_credits: (userData.credits_find || 0) + (userData.credits_verify || 0)
         }
         
         setProfile(userProfile)
@@ -42,8 +42,17 @@ export function useUserProfile() {
         getUserProfileWithCredits().then(setProfile).catch(console.error)
       }
     } else {
-      // Fallback to server-side minimal profile
-      getUserProfileWithCredits().then(setProfile).catch(console.error)
+      console.log('No valid user_data found in localStorage, falling back to server')
+      // Set a minimal profile indicating user needs to log in
+      setProfile({
+        id: 'guest',
+        email: 'Please log in',
+        full_name: 'Guest User',
+        plan: 'free',
+        credits_find: 0,
+        credits_verify: 0,
+        total_credits: 0
+      })
     }
   }, [])
   

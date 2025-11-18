@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyEmail, type EmailVerifierRequest } from '@/lib/services/email-verifier'
-import { checkCredits, deductCredits, getCurrentUser, isPlanExpired } from '@/lib/auth'
+import { checkCredits, deductCredits, isPlanExpired } from '@/lib/auth'
 
 interface VerifyEmailRequest {
   email: string
@@ -17,7 +17,9 @@ interface VerifyEmailResponse {
 export async function POST(request: NextRequest) {
   try {
     // Get current user using the same method as other dashboard APIs
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     
     if (!user) {
       return NextResponse.json(

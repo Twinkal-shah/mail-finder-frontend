@@ -1,6 +1,6 @@
 'use server'
 
-import { getCurrentUser } from '@/lib/auth'
+
 import { getUserCredits } from '@/lib/profile-server'
 import { revalidatePath } from 'next/cache'
 import { findEmail as findEmailService, type EmailFinderRequest } from '@/lib/services/email-finder'
@@ -28,7 +28,9 @@ interface FindEmailResponse {
 
 export async function findEmail(request: FindEmailRequest): Promise<FindEmailResponse> {
   try {
-    const user = await getCurrentUser()
+    // Use server-side function instead of client-side getCurrentUser
+    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const user = await getCurrentUserFromCookies()
     
     if (!user) {
       return {
