@@ -48,5 +48,5 @@ async function testLogin() {
     console.error('Error testing login:', error);
   }
 }
-
+console.log("test login")
 testLogin();
