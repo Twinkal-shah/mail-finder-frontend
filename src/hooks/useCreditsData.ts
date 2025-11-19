@@ -56,14 +56,14 @@ export function useUserProfile() {
     }
   }, [])
   
-  return { data: profile }
+  return { data: profile, isLoading: false, isError: false, error: null, refetch: () => {} }
 }
 
 // Hook for transaction history
 export function useTransactionHistory(limit: number = 10) {
   return useQuery({
     queryKey: ['transactionHistory', limit],
-    queryFn: () => getTransactionHistory(limit),
+    queryFn: () => getTransactionHistory(),
     staleTime: 1 * 60 * 1000, // 1 minute
     gcTime: 3 * 60 * 1000, // 3 minutes
     retry: 2,

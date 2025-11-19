@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await context.params
   const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
-  const url = `${backend}/api/api-key/deactivateAPIKey/${params.id}`
+  const url = `${backend}/api/api-key/deactivateAPIKey/${id}`
   const cookie = req.headers.get('cookie') || ''
   const auth = req.headers.get('authorization') || ''
   

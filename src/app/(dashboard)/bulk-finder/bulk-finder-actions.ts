@@ -186,32 +186,30 @@ export async function getBulkFinderJobStatus(jobId: string): Promise<{
       }
       
       const jobData = await jobRes.json()
-      // Use jobData to avoid unused variable warning
+      const job: BulkFinderJob = {
+        jobId: jobData.jobId || jobData.id,
+        status: jobData.status,
+        totalRequests: jobData.totalRequests || jobData.total_requests,
+        processedRequests: jobData.processedRequests || jobData.processed_requests,
+        successfulFinds: jobData.successfulFinds || jobData.successful_finds,
+        failedFinds: jobData.failedFinds || jobData.failed_finds,
+        requestsData: jobData.requestsData || jobData.requests_data,
+        errorMessage: jobData.errorMessage || jobData.error_message,
+        createdAt: jobData.createdAt || jobData.created_at,
+        updatedAt: jobData.updatedAt || jobData.updated_at,
+        completedAt: jobData.completedAt || jobData.completed_at
+      }
+
+      return {
+        success: true,
+        job
+      }
     } catch (error) {
       console.error('Error fetching finder job:', error)
       return {
         success: false,
         error: 'Job not found'
       }
-    }
-
-    const job: BulkFinderJob = {
-      jobId: jobData.jobId || jobData.id,
-      status: jobData.status,
-      totalRequests: jobData.totalRequests || jobData.total_requests,
-      processedRequests: jobData.processedRequests || jobData.processed_requests,
-      successfulFinds: jobData.successfulFinds || jobData.successful_finds,
-      failedFinds: jobData.failedFinds || jobData.failed_finds,
-      requestsData: jobData.requestsData || jobData.requests_data,
-      errorMessage: jobData.errorMessage || jobData.error_message,
-      createdAt: jobData.createdAt || jobData.created_at,
-      updatedAt: jobData.updatedAt || jobData.updated_at,
-      completedAt: jobData.completedAt || jobData.completed_at
-    }
-
-    return {
-      success: true,
-      job
     }
   } catch (error) {
     console.error('Error getting finder job status:', error)
@@ -259,32 +257,33 @@ export async function getUserBulkFinderJobs(): Promise<{
       }
       
       const data = await jobsRes.json()
-      const jobs = data.jobs || []
-      // Use jobs to avoid unused variable warning
+      const jobs: Array<Record<string, unknown>> = (data.jobs || []) as Array<Record<string, unknown>>
+      const formattedJobs: BulkFinderJob[] = jobs.map((j: Record<string, unknown>) => {
+        const job = j as Record<string, unknown>
+        return {
+          jobId: (job.jobId as string) || (job.id as string),
+          status: job.status as BulkFinderJob['status'],
+          totalRequests: (job.totalRequests as number) || (job.total_requests as number),
+          processedRequests: (job.processedRequests as number) || (job.processed_requests as number),
+          successfulFinds: (job.successfulFinds as number) || (job.successful_finds as number),
+          failedFinds: (job.failedFinds as number) || (job.failed_finds as number),
+          requestsData: (job.requestsData as BulkFindRequest[]) ?? (job.requests_data as BulkFindRequest[]),
+          errorMessage: (job.errorMessage as string) || (job.error_message as string),
+          createdAt: (job.createdAt as string) || (job.created_at as string),
+          updatedAt: (job.updatedAt as string) || (job.updated_at as string)
+        }
+      })
+
+      return {
+        success: true,
+        jobs: formattedJobs
+      }
     } catch (error) {
       console.error('Error fetching user finder jobs:', error)
       return {
         success: false,
         error: 'Failed to fetch jobs'
       }
-    }
-
-    const formattedJobs: BulkFinderJob[] = jobs.map((job) => ({
-      jobId: job.jobId || job.id,
-      status: job.status,
-      totalRequests: job.totalRequests || job.total_requests,
-      processedRequests: job.processedRequests || job.processed_requests,
-      successfulFinds: job.successfulFinds || job.successful_finds,
-      failedFinds: job.failedFinds || job.failed_finds,
-      requestsData: job.requestsData || job.requests_data,
-      errorMessage: job.errorMessage || job.error_message,
-      createdAt: job.createdAt || job.created_at,
-      updatedAt: job.updatedAt || job.updated_at
-    }))
-
-    return {
-      success: true,
-      jobs: formattedJobs
     }
   } catch (error) {
     console.error('Error in getUserBulkFinderJobs:', error)

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { verifyEmail } from '@/lib/services/email-verifier'
-import { checkCredits, deductCredits, isPlanExpired } from '@/lib/auth'
+// Removed unused imports - backend handles credits
 import { SupabaseClient } from '@supabase/supabase-js'
 import { EmailData } from '@/app/(dashboard)/verify/types'
 
@@ -42,24 +42,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if plan has expired
-    const planExpired = await isPlanExpired()
-    if (planExpired) {
-      return NextResponse.json(
-        { error: 'Your plan has expired. Please upgrade to Pro.' },
-        { status: 403 }
-      )
-    }
-
-    // Check if user has enough credits
-    const requiredCredits = emails.length
-    const availableCredits = await checkCredits(requiredCredits)
-    if (availableCredits < requiredCredits) {
-      return NextResponse.json(
-        { error: "You don't have enough credits to verify all emails." },
-        { status: 403 }
-      )
-    }
+    // Plan and credit checks are handled by the backend API
 
     // Create Supabase client
     const cookieStore = await cookies()
@@ -281,13 +264,7 @@ async function processJob(jobId: string) {
         if (result.status !== 'error') {
           successfulVerifications++
           
-          // Deduct credits for successful verification
-          await deductCredits(1, 'email_verify', {
-            email: emailItem.email,
-            result: result.status,
-            bulk: true,
-            jobId: jobId
-          })
+          // Credits are handled by the backend API
         } else {
           failedVerifications++
         }

@@ -87,9 +87,9 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
   }
 
   if (!res.ok) {
-    return { ok: false, status: res.status, error: data ?? rawText }
+    return { ok: false, status: res.status, error: (data && typeof data === 'object' && Object.keys(data).length > 0 ? data : rawText) as string | Record<string, unknown> }
   }
-  return { ok: true, status: res.status, data: data ?? rawText }
+  return { ok: true, status: res.status, data: (data && typeof data === 'object' && Object.keys(data).length > 0 ? data : rawText) as T }
 }
 
 export async function apiGet<T = unknown>(path: string, opts: Omit<RequestOptions, 'method' | 'body'> = {}) {

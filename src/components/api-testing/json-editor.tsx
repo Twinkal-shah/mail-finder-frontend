@@ -36,7 +36,7 @@ export function JsonEditor({
       JSON.parse(value)
       setIsValid(true)
       setError(null)
-    } catch {
+    } catch (err) {
       setIsValid(false)
       setError(err instanceof Error ? err.message : 'Invalid JSON')
     }

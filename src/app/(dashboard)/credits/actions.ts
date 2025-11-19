@@ -265,7 +265,7 @@ export async function createLemonSqueezyPortal() {
 }
 
 // Mock transaction history for demo
-export async function getTransactionHistory(_limit: number = 10): Promise<Transaction[]> {
+export async function getTransactionHistory(): Promise<Transaction[]> {
   try {
     // Mock implementation - return empty array for now
     // TODO: Implement actual transaction history fetching

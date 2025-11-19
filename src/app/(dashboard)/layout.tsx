@@ -1,7 +1,5 @@
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { getProfileData } from '@/lib/profile'
 import { getCurrentUserFromCookies } from '@/lib/auth-server'
-import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 
 // Force dynamic rendering for all dashboard pages

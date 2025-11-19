@@ -2,7 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // @ts-expect-error - Supabase edge runtime types
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-// @ts-expect-error - Deno runtime types
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-signature',
@@ -163,6 +162,7 @@ async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: Sup
     .from('transactions')
     .insert(transactionData)
     .select()
+    .limit(1)
     .single()
 
   if (transactionError) {

@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
 import { apiPost } from '@/lib/api'
-import { getRedirectUrl } from '@/lib/auth'
+ 
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -30,22 +30,26 @@ export default function LoginPage() {
       const res = await apiPost('/api/user/auth/login', { email, password }, { includeAuth: false })
       console.log('Login response:', res)
       if (!res.ok) {
-        setError((res.error && (res.error.message || res.error.error)) || `Login failed (${res.status})`)
+        const errorMsg = res.error && typeof res.error === 'object' ? (res.error.message || res.error.error || `Login failed (${res.status})`) : `Login failed (${res.status})`
+        setError(errorMsg as string)
         return
       }
       // Handle different backend response formats
       let accessToken, user
       
+      const responseData = res.data as Record<string, unknown>
+      
       // Check for your backend format: { data: { user, access_token } }
-      if (res.data.data && res.data.data.user && res.data.data.access_token) {
-        accessToken = res.data.data.access_token
-        user = res.data.data.user
+      if (responseData.data && typeof responseData.data === 'object' && 'user' in responseData.data && 'access_token' in responseData.data) {
+        const data = responseData.data as { user: unknown; access_token: string }
+        accessToken = data.access_token
+        user = data.user
         console.log('Detected your backend format with data wrapper')
       }
       // Check for standard format: { accessToken, user }
-      else if (res.data.accessToken && res.data.user) {
-        accessToken = res.data.accessToken
-        user = res.data.user
+      else if (responseData.accessToken && responseData.user) {
+        accessToken = responseData.accessToken as string
+        user = responseData.user
         console.log('Detected standard format')
       }
       
@@ -80,7 +84,7 @@ export default function LoginPage() {
   const registerInBackend = async (payload: { email: string; password: string; full_name: string; phone?: string; company?: string | null }) => {
     try {
       // Create minimal payload - include required fields only to avoid "additional properties" error
-      const minimalPayload: any = {
+      const minimalPayload: { email: string; password: string; full_name: string; phone?: string; company?: string } = {
         email: payload.email,
         password: payload.password,
         full_name: payload.full_name // This is required by backend
@@ -106,8 +110,8 @@ export default function LoginPage() {
       }
       
       // Handle "email already exists" case - we need to try login instead
-      const errorMsg = res.error?.message || res.error?.error || ''
-      if (res.status === 400 && errorMsg.toLowerCase().includes('already registered')) {
+      const errorMsg = res.error && typeof res.error === 'object' ? (res.error.message || res.error.error || '') : (res.error || '')
+      if (res.status === 400 && typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('already registered')) {
         console.log('Email already registered, will proceed to login...')
         return { ok: true, data: null } // Signal that we should try login
       }
@@ -119,11 +123,11 @@ export default function LoginPage() {
       }
       
       // Other errors
-      const msg = errorMsg || `HTTP ${res.status}`
+      const msg = typeof errorMsg === 'string' ? errorMsg : `HTTP ${res.status}`
       return { ok: false, error: msg }
     } catch (e: Error | unknown) {
       console.error('Signup error:', e)
-      return { ok: false, error: e?.message || 'Network error' }
+      return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
     }
   }
 

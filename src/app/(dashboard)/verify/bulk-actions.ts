@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import type { BulkVerificationJob } from './types'
+import type { BulkVerificationJob, EmailData } from './types'
 
 /**
  * Submit email data for bulk verification as a background job
@@ -181,32 +181,30 @@ export async function getBulkVerificationJobStatus(jobId: string): Promise<{
       }
       
       const jobData = await jobRes.json()
-      // Use jobData to avoid unused variable warning
+      const job: BulkVerificationJob = {
+        jobId: jobData.jobId || jobData.id,
+        status: jobData.status,
+        totalEmails: jobData.totalEmails || jobData.total_emails,
+        processedEmails: jobData.processedEmails || jobData.processed_emails,
+        successfulVerifications: jobData.successfulVerifications || jobData.successful_verifications,
+        failedVerifications: jobData.failedVerifications || jobData.failed_verifications,
+        emailsData: jobData.emailsData || jobData.emails_data,
+        errorMessage: jobData.errorMessage || jobData.error_message,
+        createdAt: jobData.createdAt || jobData.created_at,
+        updatedAt: jobData.updatedAt || jobData.updated_at,
+        completedAt: jobData.completedAt || jobData.completed_at
+      }
+
+      return {
+        success: true,
+        job
+      }
     } catch (error) {
       console.error('Error fetching job:', error)
       return {
         success: false,
         error: 'Job not found'
       }
-    }
-
-    const job: BulkVerificationJob = {
-      jobId: jobData.jobId || jobData.id,
-      status: jobData.status,
-      totalEmails: jobData.totalEmails || jobData.total_emails,
-      processedEmails: jobData.processedEmails || jobData.processed_emails,
-      successfulVerifications: jobData.successfulVerifications || jobData.successful_verifications,
-      failedVerifications: jobData.failedVerifications || jobData.failed_verifications,
-      emailsData: jobData.emailsData || jobData.emails_data,
-      errorMessage: jobData.errorMessage || jobData.error_message,
-      createdAt: jobData.createdAt || jobData.created_at,
-      updatedAt: jobData.updatedAt || jobData.updated_at,
-      completedAt: jobData.completedAt || jobData.completed_at
-    }
-
-    return {
-      success: true,
-      job
     }
   } catch (error) {
     console.error('Error getting job status:', error)
@@ -254,32 +252,33 @@ export async function getUserBulkVerificationJobs(): Promise<{
       }
       
       const data = await jobsRes.json()
-      const jobs = data.jobs || []
-      // Use jobs to avoid unused variable warning
+      const jobs: Array<Record<string, unknown>> = (data.jobs || []) as Array<Record<string, unknown>>
+      const formattedJobs: BulkVerificationJob[] = jobs.map((j: Record<string, unknown>) => {
+        const job = j as Record<string, unknown>
+        return {
+          jobId: (job.jobId as string) || (job.id as string),
+          status: job.status as BulkVerificationJob['status'],
+          totalEmails: (job.totalEmails as number) || (job.total_emails as number),
+          processedEmails: (job.processedEmails as number) || (job.processed_emails as number),
+          successfulVerifications: (job.successfulVerifications as number) || (job.successful_verifications as number),
+          failedVerifications: (job.failedVerifications as number) || (job.failed_verifications as number),
+          emailsData: (job.emailsData as EmailData[]) ?? (job.emails_data as EmailData[]),
+          errorMessage: (job.errorMessage as string) || (job.error_message as string),
+          createdAt: (job.createdAt as string) || (job.created_at as string),
+          updatedAt: (job.updatedAt as string) || (job.updated_at as string)
+        }
+      })
+
+      return {
+        success: true,
+        jobs: formattedJobs
+      }
     } catch (error) {
       console.error('Error fetching user jobs:', error)
       return {
         success: false,
         error: 'Failed to fetch jobs'
       }
-    }
-
-    const formattedJobs: BulkVerificationJob[] = jobs.map((job) => ({
-      jobId: job.jobId || job.id,
-      status: job.status,
-      totalEmails: job.totalEmails || job.total_emails,
-      processedEmails: job.processedEmails || job.processed_emails,
-      successfulVerifications: job.successfulVerifications || job.successful_verifications,
-      failedVerifications: job.failedVerifications || job.failed_verifications,
-      emailsData: job.emailsData || job.emails_data,
-      errorMessage: job.errorMessage || job.error_message,
-      createdAt: job.createdAt || job.created_at,
-      updatedAt: job.updatedAt || job.updated_at
-    }))
-
-    return {
-      success: true,
-      jobs: formattedJobs
     }
   } catch (error) {
     console.error('Error in getUserBulkVerificationJobs:', error)
