@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
           )
         }
       }
-    } catch (error) {
+    } catch {
       const fallbackCredits = Number(user?.credits_verify ?? 0)
       availableCredits = fallbackCredits
       if (availableCredits < 1) {
