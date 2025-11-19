@@ -20,8 +20,7 @@ export async function GET(request: NextRequest) {
 
     const contentType = res.headers.get('content-type') || 'application/json'
     const text = await res.text()
-    if (res.status === 404) {
-      // Gracefully handle missing backend endpoint by returning empty jobs
+    if (res.status === 404 || res.status === 429) {
       return NextResponse.json({ jobs: [] }, { status: 200 })
     }
     return new NextResponse(text, { status: res.status, headers: { 'content-type': contentType } })

@@ -1,97 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { processJobInBackground } from '@/lib/bulk-finder-processor'
 
-async function createSupabaseClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-}
-
-// GET endpoint to fetch user bulk finder jobs
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Use server-side function instead of client-side getCurrentUser
-    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
-    const user = await getCurrentUserFromCookies()
-    if (!user) {
-      console.log('GET bulk finder jobs - No authenticated user found')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+    const url = `${backend}/api/bulk-finder/jobs`
+    const cookie = request.headers.get('cookie') || ''
+    const auth = request.headers.get('authorization') || ''
+    const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+    const accessToken = await getAccessTokenFromCookies()
 
-    const supabase = await createSupabaseClient()
-    
-    const { data: jobs, error } = await supabase
-      .from('bulk_finder_jobs')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (error) {
-      console.error('Error fetching bulk finder jobs:', error)
-      return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 })
-    }
-
-    return NextResponse.json({ jobs })
-  } catch (error) {
-    console.error('GET bulk finder jobs error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
-
-// POST endpoint for background processing
-export async function POST(request: NextRequest) {
-  try {
-    // Use server-side function instead of client-side getCurrentUser
-    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
-    const user = await getCurrentUserFromCookies()
-    if (!user) {
-      console.log('POST bulk finder jobs - No authenticated user found')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    const { jobId } = body
-    
-    if (!jobId) {
-      return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
-    }
-
-    // Start background processing with proper error handling
-    processJobInBackground(jobId).catch(async (error) => {
-      console.error('Background processing failed for job:', jobId, error)
-      
-      // Update job status to failed if background processing fails
-      try {
-        const supabase = await createSupabaseClient()
-        await supabase
-          .from('bulk_finder_jobs')
-          .update({ 
-            status: 'failed',
-            error_message: error.message || 'Background processing failed'
-          })
-          .eq('id', jobId)
-      } catch (updateError) {
-        console.error('Failed to update job status to failed:', updateError)
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(auth ? { Authorization: auth } : {}),
+        ...(accessToken && !auth ? { Authorization: `Bearer ${accessToken}` } : {})
       }
     })
-    
-    return NextResponse.json({ success: true })
+
+    const contentType = res.headers.get('content-type') || 'application/json'
+    const text = await res.text()
+    if (res.status === 404 || res.status === 429) {
+      return NextResponse.json({ jobs: [] }, { status: 200 })
+    }
+    return new NextResponse(text, { status: res.status, headers: { 'content-type': contentType } })
   } catch (error) {
-    console.error('POST bulk finder job error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Proxy error', message: (error as Error).message }, { status: 500 })
   }
 }
 
-// Background processing function
+export async function POST(request: NextRequest) {
+  try {
+    const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+    const { jobId } = await request.json()
+    if (!jobId) return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
+
+    const url = `${backend}/api/bulk-finder/process?jobId=${encodeURIComponent(jobId)}`
+    const cookie = request.headers.get('cookie') || ''
+    const auth = request.headers.get('authorization') || ''
+    const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+    const accessToken = await getAccessTokenFromCookies()
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(auth ? { Authorization: auth } : {}),
+        ...(accessToken && !auth ? { Authorization: `Bearer ${accessToken}` } : {})
+      }
+    })
+
+    const contentType = res.headers.get('content-type') || 'application/json'
+    const text = await res.text()
+    return new NextResponse(text, { status: res.status, headers: { 'content-type': contentType } })
+  } catch (error) {
+    return NextResponse.json({ error: 'Proxy error', message: (error as Error).message }, { status: 500 })
+  }
+}
