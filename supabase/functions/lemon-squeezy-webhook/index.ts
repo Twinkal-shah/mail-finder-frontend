@@ -162,8 +162,6 @@ async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: Sup
     .from('transactions')
     .insert(transactionData)
     .select()
-    .limit(1)
-    .single()
 
   if (transactionError) {
     console.error('Error creating transaction:', transactionError)
@@ -171,14 +169,19 @@ async function handleWebhookEvent(event: LemonSqueezyWebhookEvent, supabase: Sup
   }
 
   // Handle different event types
+  const transactionRecord = Array.isArray(transaction) && transaction.length > 0 ? transaction[0] : null
+  if (!transactionRecord) {
+    throw new Error('Failed to create transaction record')
+  }
+  
   switch (event.meta.event_name) {
     case 'subscription_payment_success':
     case 'order_created':
-      await handlePaymentSuccess(supabase, event, transaction, planName)
+      await handlePaymentSuccess(supabase, event, transactionRecord, planName)
       break
     case 'subscription_created':
     case 'subscription_updated':
-      await handleSubscriptionEvent(supabase, event, transaction, planName)
+      await handleSubscriptionEvent(supabase, event, transactionRecord, planName)
       break
     case 'subscription_cancelled':
     case 'subscription_expired':
@@ -243,7 +246,7 @@ async function handlePaymentSuccess(supabase: SupabaseClient, event: LemonSqueez
     .from('profiles')
     .select('credits_find, credits_verify, plan, plan_expiry')
     .eq('id', userId)
-    .single()
+    .single() as { data: { credits_find: number; credits_verify: number; plan: string; plan_expiry: string } | null; error: Error | null }
 
   if (profileFetchError) {
     console.error('Error fetching user profile:', profileFetchError)
@@ -301,7 +304,7 @@ async function handlePaymentSuccess(supabase: SupabaseClient, event: LemonSqueez
     .from('profiles')
     .update(updateData)
     .eq('id', userId)
-
+  
   if (profileError) {
     console.error('Error updating profile:', profileError)
     throw profileError
