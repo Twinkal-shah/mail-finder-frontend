@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     // Get current user using the same method as other dashboard APIs
     // Use server-side function instead of client-side getCurrentUser
-    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+    const { getCurrentUserFromCookies, getAccessTokenFromCookies } = await import('@/lib/auth-server')
     const user = await getCurrentUserFromCookies()
     
     if (!user) {
@@ -27,30 +27,12 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Check if plan has expired via backend API
-    try {
-      const profileRes = await fetch('/api/user/profile/getProfile', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
-      if (profileRes.ok) {
-        const profile = await profileRes.json()
-        if (profile.plan_expired) {
-          return NextResponse.json(
-            { error: 'Your plan has expired. Please upgrade to Pro.' },
-            { status: 403 }
-          )
-        }
-      }
-    } catch (error) {
-      console.error('Error checking plan status:', error)
-      // Continue with credit check even if plan check fails
-    }
-
-    // Parse request body
+    // Check if plan has expired and get credits from profile data
+    const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+    const cookie = request.headers.get('cookie') || ''
+    const accessToken = await getAccessTokenFromCookies()
+    
+    // Parse request body first
     let body: VerifyEmailRequest
     try {
       body = await request.json()
@@ -79,18 +61,39 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if user has sufficient credits via backend API
+    // Check if user has sufficient credits and plan status (get from profile data)
+    let availableCredits = 0;
     try {
-      const creditsRes = await fetch('/api/user/credits', {
+      const profileHeaders: Record<string, string> = {}
+      if (cookie) profileHeaders.Cookie = cookie
+      if (accessToken) profileHeaders.Authorization = `Bearer ${accessToken}`
+      const origin = request.nextUrl.origin
+      const profileRes = await fetch(`${origin}/api/user/profile/getProfile`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: profileHeaders,
+        cache: 'no-store',
       })
       
-      if (creditsRes.ok) {
-        const creditsData = await creditsRes.json()
-        const availableCredits = creditsData.verify || 0
+      if (profileRes.ok) {
+        const profileData = await profileRes.json()
+        
+        // Check plan expiration
+        if (profileData.plan_expired) {
+          return NextResponse.json(
+            { error: 'Your plan has expired. Please upgrade to Pro.' },
+            { status: 403 }
+          )
+        }
+        
+        // Extract credits from profile data - handle different field names
+        const pd = profileData
+        availableCredits = pd.credits_verify || pd.verify || pd.verifyCredits || pd.credits || pd.total_credits ||
+          (pd.data?.credits_verify || pd.data?.verify || pd.data?.verifyCredits || pd.data?.credits || pd.data?.total_credits) || 0
+        if (!availableCredits || availableCredits < 1) {
+          const fallbackUser = user
+          const fallbackCredits = Number(fallbackUser?.credits_verify ?? 0)
+          availableCredits = fallbackCredits
+        }
         if (availableCredits < 1) {
           return NextResponse.json(
             { error: 'Insufficient verify credits' },
@@ -98,18 +101,24 @@ export async function POST(request: NextRequest) {
           )
         }
       } else {
-        console.error('Failed to check credits:', await creditsRes.text())
-        return NextResponse.json(
-          { error: 'Failed to check credits' },
-          { status: 500 }
-        )
+        const fallbackCredits = Number(user?.credits_verify ?? 0)
+        availableCredits = fallbackCredits
+        if (availableCredits < 1) {
+          return NextResponse.json(
+            { error: 'Insufficient verify credits' },
+            { status: 402 }
+          )
+        }
       }
     } catch (error) {
-      console.error('Error checking credits:', error)
-      return NextResponse.json(
-        { error: 'Failed to check credits' },
-        { status: 500 }
-      )
+      const fallbackCredits = Number(user?.credits_verify ?? 0)
+      availableCredits = fallbackCredits
+      if (availableCredits < 1) {
+        return NextResponse.json(
+          { error: 'Insufficient verify credits' },
+          { status: 402 }
+        )
+      }
     }
 
     // Prepare email verification request
@@ -120,20 +129,20 @@ export async function POST(request: NextRequest) {
     // Call email verification service
     const serviceResult = await verifyEmail(verificationRequest)
 
-    // Deduct credits after successful verification via backend API
+    // Deduct credits after successful verification via backend API (use profile endpoint)
     try {
-      const deductResponse = await fetch('/api/user/credits/deduct', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const updateHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (cookie) updateHeaders.Cookie = cookie
+      if (accessToken) updateHeaders.Authorization = `Bearer ${accessToken}`
+      const deductResponse = await fetch(`${backend}/api/user/profile/updateProfile`, {
+        method: 'PUT',
+        headers: updateHeaders,
         body: JSON.stringify({
-          amount: 1,
-          type: 'verify',
-          operation: 'email_verify',
+          credits_verify: availableCredits - 1,
           metadata: {
             email: body.email,
-            result: serviceResult.status
+            result: serviceResult.status,
+            operation: 'email_verify'
           }
         })
       })
@@ -193,3 +202,5 @@ export async function DELETE() {
     { status: 405 }
   )
 }
+
+export const runtime = 'nodejs'

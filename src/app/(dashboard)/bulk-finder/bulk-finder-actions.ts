@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
-import { recoverStuckJobs } from '@/lib/bulk-finder-processor'
+import type { BulkFinderJob, BulkFindRequest } from './types.js'
 import type { BulkFinderJob, BulkFindRequest } from './types.js'
 
 /**
@@ -103,35 +103,17 @@ export async function submitBulkFinderJob(requests: BulkFindRequest[], filename?
       }
     }
 
-    // Add job to the queue for reliable background processing
     try {
-      const { getJobQueue } = await import('@/lib/job-queue')
-      const jobQueue = getJobQueue()
-      
-      const success = await jobQueue.addJob(jobId)
-      if (!success) {
-        console.error('Failed to add job to queue, falling back to direct processing')
-        
-        // Fallback to direct processing
-        const { processJobInBackground } = await import('@/lib/bulk-finder-processor')
-        processJobInBackground(jobId).catch(async (error) => {
-          console.error('Background processing failed for job:', jobId, error)
-          // The backend will handle updating job status to failed
-        })
+      const processResponse = await fetch(`/api/bulk-finder/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId })
+      })
+      if (!processResponse.ok) {
+        return { success: false, error: 'Failed to start background processing' }
       }
-    } catch (error) {
-      console.error('Error adding job to queue:', error)
-      
-      // Fallback to direct processing
-      try {
-        const { processJobInBackground } = await import('@/lib/bulk-finder-processor')
-        processJobInBackground(jobId).catch(async (error) => {
-          console.error('Background processing failed for job:', jobId, error)
-          // The backend will handle updating job status to failed
-        })
-      } catch (fallbackError) {
-        console.error('Error in fallback processing:', fallbackError)
-      }
+    } catch {
+      return { success: false, error: 'Failed to start background processing' }
     }
 
     revalidatePath('/(dashboard)', 'layout')
@@ -170,7 +152,7 @@ export async function getBulkFinderJobStatus(jobId: string): Promise<{
 
     // Fetch job status via backend API
     try {
-      const jobRes = await fetch(`/api/bulk-finder/jobs/${jobId}`, {
+      const jobRes = await fetch(`/api/bulk-finder/status?jobId=${jobId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -314,7 +296,7 @@ export async function stopBulkFinderJob(jobId: string): Promise<{
 
     // Stop job via backend API
     try {
-      const stopRes = await fetch(`/api/bulk-finder/jobs/${jobId}/stop`, {
+      const stopRes = await fetch(`/api/bulk-finder/stop?jobId=${jobId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -358,7 +340,9 @@ export async function recoverStuckJobsAction(): Promise<{
   error?: string
 }> {
   try {
-    await recoverStuckJobs()
+    try {
+      await fetch('/api/init-jobs', { method: 'POST' })
+    } catch {}
     revalidatePath('/bulk-finder')
     return { success: true }
   } catch (error) {

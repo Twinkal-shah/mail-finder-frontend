@@ -5,6 +5,8 @@ export async function POST(req: NextRequest) {
   const url = `${backend}/api/email/verifyEmail`
   const cookie = req.headers.get('cookie') || ''
   const auth = req.headers.get('authorization') || ''
+  const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+  const accessToken = await getAccessTokenFromCookies()
   
   try {
     const body = await req.text()
@@ -13,6 +15,7 @@ export async function POST(req: NextRequest) {
       headers: {
         ...(cookie ? { Cookie: cookie } : {}),
         ...(auth ? { Authorization: auth } : {}),
+        ...(accessToken && !auth ? { Authorization: `Bearer ${accessToken}` } : {}),
         'content-type': 'application/json'
       },
       body,

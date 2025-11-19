@@ -1,7 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { User } from '@supabase/supabase-js'
+type User = {
+  id: string
+  email?: string | null
+  user_metadata?: Record<string, unknown>
+}
 
 interface AuthState {
   user: User | null

@@ -120,13 +120,13 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
               if (updatedProfile) {
                 const fullUserProfile = {
                   full_name: updatedProfile.full_name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email?.split('@')[0] || 'User',
-                  credits: (updatedProfile.credits_find || 0) + (updatedProfile.credits_verify || 0),
+                  credits: Number((updatedProfile.credits_find ?? userData.credits_find ?? 0)) + Number((updatedProfile.credits_verify ?? userData.credits_verify ?? 0)),
                   email: updatedProfile.email || userData.email || '',
                   company: updatedProfile.company ?? userData.company ?? null,
                   plan: updatedProfile.plan || userData.plan || 'free',
                   plan_expiry: updatedProfile.plan_expiry ?? userData.plan_expiry ?? null,
-                  credits_find: updatedProfile.credits_find ?? userData.credits_find ?? 0,
-                  credits_verify: updatedProfile.credits_verify ?? userData.credits_verify ?? 0
+                  credits_find: Number(updatedProfile.credits_find ?? userData.credits_find ?? 0),
+                  credits_verify: Number(updatedProfile.credits_verify ?? userData.credits_verify ?? 0)
                 }
                 console.log('Full user profile from backend:', fullUserProfile)
                 setCurrentProfile(fullUserProfile)
@@ -149,13 +149,13 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
         if (updatedProfile) {
           const newUserProfile = {
             full_name: updatedProfile.full_name || updatedProfile.email?.split('@')[0] || 'User',
-            credits: (updatedProfile.credits_find || 0) + (updatedProfile.credits_verify || 0),
+            credits: Number(updatedProfile.credits_find ?? 0) + Number(updatedProfile.credits_verify ?? 0),
             email: updatedProfile.email || 'user@example.com',
             company: updatedProfile.company ?? null,
             plan: updatedProfile.plan || 'free',
             plan_expiry: updatedProfile.plan_expiry ?? null,
-            credits_find: updatedProfile.credits_find ?? 0,
-            credits_verify: updatedProfile.credits_verify ?? 0
+            credits_find: Number(updatedProfile.credits_find ?? 0),
+            credits_verify: Number(updatedProfile.credits_verify ?? 0)
           }
           console.log('Setting profile from backend:', newUserProfile)
           setCurrentProfile(newUserProfile)

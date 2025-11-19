@@ -165,7 +165,7 @@ export async function getBulkVerificationJobStatus(jobId: string): Promise<{
 
     // Fetch job status via backend API
     try {
-      const jobRes = await fetch(`/api/bulk-verify/jobs/${jobId}`, {
+      const jobRes = await fetch(`/api/bulk-verify/status?jobId=${jobId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -309,7 +309,7 @@ export async function stopBulkVerificationJob(jobId: string): Promise<{
 
     // Stop job via backend API
     try {
-      const stopRes = await fetch(`/api/bulk-verify/jobs/${jobId}/stop`, {
+      const stopRes = await fetch(`/api/bulk-verify/stop?jobId=${jobId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

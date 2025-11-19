@@ -4,10 +4,10 @@ export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get('jobId')
-    if (!jobId) return NextResponse.json({ error: 'Job ID is required' }, { status: 400 })
+    if (!jobId) return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
 
     const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
-    const url = `${backend}/api/bulk-verify/process?jobId=${encodeURIComponent(jobId)}`
+    const url = `${backend}/api/bulk-finder/stop?jobId=${encodeURIComponent(jobId)}`
     const cookie = request.headers.get('cookie') || ''
     const auth = request.headers.get('authorization') || ''
     const { getAccessTokenFromCookies } = await import('@/lib/auth-server')

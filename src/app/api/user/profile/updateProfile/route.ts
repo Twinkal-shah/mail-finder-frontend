@@ -4,12 +4,15 @@ export async function PUT(req: NextRequest) {
   const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
   const url = `${backend}/api/user/profile/updateProfile`
   const cookie = req.headers.get('cookie') || ''
+  const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+  const accessToken = await getAccessTokenFromCookies()
   try {
     const body = await req.text()
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
         ...(cookie ? { Cookie: cookie } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         'content-type': 'application/json'
       },
       body,
