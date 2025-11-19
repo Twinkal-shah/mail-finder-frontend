@@ -253,7 +253,7 @@ export function DashboardLayout({ children, userProfile }: DashboardLayoutProps)
                 alt="MailsFinder Logo" 
                 width={100}
                 height={25}
-                className="h-25 w-auto"
+                className="h-[25px] w-auto"
               />
             </Link>
             <Button

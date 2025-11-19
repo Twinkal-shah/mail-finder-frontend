@@ -67,6 +67,27 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
     finalHeaders['Authorization'] = `Bearer ${authToken}`;
   }
 
+  // In server environment, forward cookies and token to same-origin API routes
+  const isServer = typeof window === 'undefined'
+  if (isServer && (useProxy || path.startsWith('/api/'))) {
+    try {
+      const { cookies } = await import('next/headers')
+      const cookieStore = await cookies()
+      if (cookieStore && !finalHeaders['Cookie']) {
+        // Forward the full cookie header so API routes can read user session
+        finalHeaders['Cookie'] = cookieStore.toString()
+      }
+      if (includeAuth && !finalHeaders['Authorization']) {
+        const tokenCookie = cookieStore.get('access_token')?.value
+        if (tokenCookie) {
+          finalHeaders['Authorization'] = `Bearer ${tokenCookie}`
+        }
+      }
+    } catch {
+      // Silently ignore if cookies are not available in this context
+    }
+  }
+
   const res = await fetch(url, {
     method,
     headers: finalHeaders,
