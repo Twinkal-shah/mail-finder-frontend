@@ -1,8 +1,10 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { getUserProfileWithCredits, getTransactionHistory, getCreditUsageHistory } from '@/app/(dashboard)/credits/actions'
+import { getTransactionHistory, getCreditUsageHistory } from '@/app/(dashboard)/credits/actions'
 import { useEffect, useState } from 'react'
+import { getProfileDataClient } from '@/lib/profile'
+import { apiGet } from '@/lib/api'
 
 // Hook for user profile with credits - client-side version
 export function useUserProfile() {
@@ -17,43 +19,53 @@ export function useUserProfile() {
   } | null>(null)
   
   useEffect(() => {
-    // Get user data from localStorage
-    const userDataStr = localStorage.getItem('user_data')
-    
-    if (userDataStr && userDataStr !== 'undefined' && userDataStr !== 'null') {
+    ;(async () => {
       try {
-        const userData = JSON.parse(userDataStr)
-        
-        // Create profile from user data - handle backend user structure
-        const userProfile = {
-          id: userData._id || userData.id,
-          email: userData.email || '',
-          full_name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.full_name || userData.email?.split('@')[0] || 'User',
-          plan: userData.plan || 'free', // Default plan
-          credits_find: userData.credits_find || 0,
-          credits_verify: userData.credits_verify || 0,
-          total_credits: (userData.credits_find || 0) + (userData.credits_verify || 0)
+        const p = await getProfileDataClient()
+        let findCredits = 0
+        let verifyCredits = 0
+        try {
+          const res = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
+          if (res.ok && res.data) {
+            const d = res.data as Record<string, unknown>
+            findCredits = Number(d['find'] ?? d['credits_find'] ?? 0)
+            verifyCredits = Number(d['verify'] ?? d['credits_verify'] ?? 0)
+          }
+        } catch {}
+        if (p) {
+          const profileData = {
+            id: p.id,
+            email: p.email || '',
+            full_name: (p.full_name as string) || 'User',
+            plan: (p.plan as string) || 'free',
+            credits_find: findCredits,
+            credits_verify: verifyCredits,
+            total_credits: findCredits + verifyCredits
+          }
+          setProfile(profileData)
+        } else {
+          setProfile({
+            id: 'guest',
+            email: 'Please log in',
+            full_name: 'Guest User',
+            plan: 'free',
+            credits_find: 0,
+            credits_verify: 0,
+            total_credits: 0
+          })
         }
-        
-        setProfile(userProfile)
-      } catch (e) {
-        console.error('Error parsing user data from localStorage:', e)
-        // Fallback to server-side minimal profile
-        getUserProfileWithCredits().then(setProfile).catch(console.error)
+      } catch {
+        setProfile({
+          id: 'guest',
+          email: 'Please log in',
+          full_name: 'Guest User',
+          plan: 'free',
+          credits_find: 0,
+          credits_verify: 0,
+          total_credits: 0
+        })
       }
-    } else {
-      console.log('No valid user_data found in localStorage, falling back to server')
-      // Set a minimal profile indicating user needs to log in
-      setProfile({
-        id: 'guest',
-        email: 'Please log in',
-        full_name: 'Guest User',
-        plan: 'free',
-        credits_find: 0,
-        credits_verify: 0,
-        total_credits: 0
-      })
-    }
+    })()
   }, [])
   
   return { data: profile, isLoading: false, isError: false, error: null, refetch: () => {} }

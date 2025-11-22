@@ -1,6 +1,7 @@
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { getCurrentUserFromCookies } from '@/lib/auth-server'
 import { cookies } from 'next/headers'
+import { apiGet } from '@/lib/api'
 
 // Force dynamic rendering for all dashboard pages
 export const dynamic = 'force-dynamic'
@@ -34,9 +35,9 @@ export default async function Layout({
       plan_expiry: null,
 
       // ⭐ Prevent flicker — do NOT initialize credits to 0
-      credits: undefined as any,
-      credits_find: undefined as any,
-      credits_verify: undefined as any,
+      credits: undefined as unknown as number,
+      credits_find: undefined as unknown as number,
+      credits_verify: undefined as unknown as number,
     }}>
 
         {children}
@@ -47,6 +48,8 @@ export default async function Layout({
   // User found via cookies, proceed normally
   // Try to fetch full profile data from backend
   let fullProfile = null
+  let serverFind = 0
+  let serverVerify = 0
   try {
     // Get access token from cookies to make authenticated request
     const cookieStore = await cookies()
@@ -64,8 +67,13 @@ export default async function Layout({
       
       if (profileRes.ok) {
         fullProfile = await profileRes.json()
-        console.log('Full profile from backend:', fullProfile)
       }
+    }
+    const creditsRes = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
+    if (creditsRes.ok && creditsRes.data) {
+      const d = creditsRes.data as Record<string, unknown>
+      serverFind = Number(d['credits_find'] ?? d['find'] ?? 0)
+      serverVerify = Number(d['credits_verify'] ?? d['verify'] ?? 0)
     }
   } catch (error) {
     console.error('Failed to fetch full profile:', error)
@@ -74,11 +82,10 @@ export default async function Layout({
   // Use the user data from cookies to create the profile
   // Backend returns: { _id, email, firstName, lastName } (your backend format)
   // Frontend expects: { full_name, email, credits, etc. }
-const serverFind = Number(fullProfile?.credits_find ?? user.credits_find ?? 0)
-const serverVerify = Number(fullProfile?.credits_verify ?? user.credits_verify ?? 0)
-
-// ⭐ FINAL FIX: remove flicker by ignoring old backend "credits"
-const serverTotal = serverFind + serverVerify
+if (!serverFind && !serverVerify) {
+  serverFind = Number(fullProfile?.credits_find ?? user.credits_find ?? 0)
+  serverVerify = Number(fullProfile?.credits_verify ?? user.credits_verify ?? 0)
+}
 
   const userProfile = {
     full_name: fullProfile?.full_name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.full_name || null,

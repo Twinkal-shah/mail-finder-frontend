@@ -26,6 +26,7 @@ import {
   Code2,
 } from 'lucide-react'
 import { getProfileDataClient } from '@/lib/profile'
+import { apiGet } from '@/lib/api'
 import { OnboardingFlow } from '@/components/onboarding-flow'
 import { toast } from 'sonner'
 
@@ -104,8 +105,16 @@ const [currentProfile, setCurrentProfile] = useState({
   if ('credits' in up) {
     delete up.credits
   }
-          const findCredits = Number(up.credits_find ?? currentProfile.credits_find ?? 0)
-          const verifyCredits = Number(up.credits_verify ?? currentProfile.credits_verify ?? 0)
+          let findCredits = Number(currentProfile.credits_find ?? 0)
+          let verifyCredits = Number(currentProfile.credits_verify ?? 0)
+          try {
+            const res = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
+            if (res.ok && res.data) {
+              const d = res.data as Record<string, unknown>
+              findCredits = Number(d['find'] ?? d['credits_find'] ?? findCredits)
+              verifyCredits = Number(d['verify'] ?? d['credits_verify'] ?? verifyCredits)
+            }
+          } catch {}
           const totalCredits = findCredits + verifyCredits
 
           const fullNameValue = typeof up.full_name === 'string' ? (up.full_name as string) : (currentProfile.full_name || 'User')
@@ -135,8 +144,8 @@ const [currentProfile, setCurrentProfile] = useState({
             const userData = JSON.parse(userDataStr)
             console.log('Parsed user data:', userData)
             const nameFromLocal = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.full_name || null
-            const findCredits = Number(userData.credits_find ?? currentProfile.credits_find ?? 0)
-            const verifyCredits = Number(userData.credits_verify ?? currentProfile.credits_verify ?? 0)
+            const findCredits = Number(currentProfile.credits_find ?? 0)
+            const verifyCredits = Number(currentProfile.credits_verify ?? 0)
             const totalCredits = findCredits + verifyCredits
 
             const emailValue = typeof userData.email === 'string' ? userData.email : (currentProfile.email || '')
