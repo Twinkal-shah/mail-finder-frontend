@@ -7,10 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
-import { Upload, Download, Play, Shield, AlertCircle, CheckCircle, Clock, Pause } from 'lucide-react'
+import { Upload, Download, Play, Shield, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
-import { submitBulkVerificationJob, getBulkVerificationJobStatus, stopBulkVerificationJob } from './bulk-actions'
 import type { BulkVerificationJob, EmailData } from './types'
 import { useQueryInvalidation } from '@/lib/query-invalidation'
 
@@ -30,14 +29,7 @@ interface CsvRow {
   [key: string]: unknown
 }
 
-interface EmailResult {
-  email: string
-  status: 'pending' | 'processing' | 'valid' | 'invalid' | 'risky' | 'error' | 'unknown'
-  catch_all?: boolean
-  domain?: string
-  mx?: string
-  user_name?: string
-}
+ 
 
 export default function VerifyPage() {
   const [singleEmail, setSingleEmail] = useState('')
@@ -56,95 +48,19 @@ export default function VerifyPage() {
   // const [isSubmittingJob, setIsSubmittingJob] = useState(false) // Currently unused
 
   // Poll job status every 3 seconds
-  const pollJobStatus = useCallback(async (jobId: string) => {
-    const poll = async () => {
-      try {
-        const result = await getBulkVerificationJobStatus(jobId)
-        
-        if (result.success && result.job) {
-          const job = result.job
-          setCurrentJob(job)
-          
-          // Update progress
-          if (job.totalEmails > 0) {
-            const progressPercent = (job.processedEmails || 0) / job.totalEmails * 100
-            setProgress(progressPercent)
-            setProcessedCount(job.processedEmails || 0)
-          }
-          
-          // Update rows with results if available
-          if (job.emailsData && Array.isArray(job.emailsData)) {
-            setRows(prevRows => {
-              return prevRows.map(row => {
-                const emailResult = (job.emailsData as EmailResult[])?.find((result: EmailResult) => result.email === row.email)
-                if (emailResult) {
-                  return {
-                    ...row,
-                    status: emailResult.status || 'pending',
-                    catch_all: emailResult.catch_all as boolean | undefined,
-                    domain: emailResult.domain as string | undefined,
-                    mx: emailResult.mx as string | undefined,
-                    user_name: emailResult.user_name as string | undefined
-                  }
-                }
-                return row
-              })
-            })
-          }
-          
-          // Check if job is completed
-          if (job.status === 'completed') {
-            setIsProcessing(false)
-            toast.success(`Bulk verification completed! ${job.successfulVerifications || 0} emails verified successfully.`)
-            loadUserJobs() // Refresh job list
-            // Invalidate queries for real-time credit updates
-            invalidateCreditsData()
-          } else if (job.status === 'failed') {
-            setIsProcessing(false)
-            toast.error(`Bulk verification failed: ${job.errorMessage || 'Unknown error'}`)
-            loadUserJobs() // Refresh job list
-          } else if (job.status === 'processing' || job.status === 'pending') {
-            // Continue polling
-            setTimeout(poll, 3000)
-          }
-        } else {
-          console.error('Failed to get job status:', result.error)
-          setTimeout(poll, 3000) // Retry after 3 seconds
-        }
-      } catch (error) {
-        console.error('Error polling job status:', error)
-        setTimeout(poll, 3000) // Retry after 3 seconds
-      }
-    }
-    
-    poll()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+ 
 
   // Load user's bulk verification jobs
   const loadUserJobs = useCallback(async () => {
     try {
       const response = await fetch('/api/bulk-verify/jobs')
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      if (!response.ok) return
       const data = await response.json()
-      
       if (data.jobs) {
         setAllJobs(data.jobs)
-        
-        // Check if there's an active job
-        const activeJob = data.jobs.find((job: BulkVerificationJob) => job.status === 'processing' || job.status === 'pending')
-        if (activeJob && !currentJob) {
-          setCurrentJob(activeJob)
-          setIsProcessing(true)
-          pollJobStatus(activeJob.jobId)
-        }
       }
-    } catch (error) {
-      console.error('Error loading user jobs:', error)
-    }
-  }, [currentJob, pollJobStatus, setAllJobs, setCurrentJob, setIsProcessing])
+    } catch {}
+  }, [])
 
   // Load jobs on component mount
   useEffect(() => {
@@ -300,49 +216,69 @@ export default function VerifyPage() {
 
   const runBulkVerify = async () => {
     const validRows = rows.filter(row => row.email)
-    
     if (validRows.length === 0) {
       toast.error('Please add at least one valid email address')
       return
     }
-
-    // setIsSubmittingJob(true) // Currently unused
-
+    setIsProcessing(true)
+    setProcessedCount(0)
+    setProgress(0)
+    setCurrentJob({
+      jobId: `local-${Date.now()}`,
+      status: 'processing',
+      totalEmails: validRows.length,
+      processedEmails: 0,
+      successfulVerifications: 0,
+      failedVerifications: 0,
+      filename: originalFileName
+    })
     try {
-      // Pass the full row data including all original columns
-      const emailsData = validRows.map(row => {
-        // Remove the id field and keep all other original columns
-        const { ...rowData } = row
-        return rowData
-      })
-      const result = await submitBulkVerificationJob(emailsData, originalFileName)
-      
-      if (result.success && result.jobId) {
-        toast.success('Bulk verification job submitted! Processing in background...')
-        
-        // Create a new job object for tracking
-        const newJob: BulkVerificationJob = {
-          jobId: result.jobId,
-          status: 'pending',
-          totalEmails: emailsData.length,
-          processedEmails: 0,
-          successfulVerifications: 0,
-          failedVerifications: 0
+      let processed = 0
+      for (const row of validRows) {
+        setRows(prev => prev.map(r => r.id === row.id ? { ...r, status: 'processing' } : r))
+        const res = await fetch('/verify/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: row.email })
+        })
+        const data = await res.json()
+        if (res.ok) {
+          setRows(prev => prev.map(r => r.id === row.id ? {
+            ...r,
+            status: data.status || 'unknown',
+            catch_all: data.catch_all,
+            domain: data.domain,
+            mx: data.mx,
+            user_name: data.user_name
+          } : r))
+          setCurrentJob(prev => prev ? {
+            ...prev,
+            processedEmails: (prev.processedEmails || 0) + 1,
+            successfulVerifications: (prev.successfulVerifications || 0) + (data.status === 'valid' ? 1 : 0),
+            failedVerifications: (prev.failedVerifications || 0) + (data.status === 'invalid' ? 1 : 0)
+          } : prev)
+        } else {
+          setRows(prev => prev.map(r => r.id === row.id ? { ...r, status: 'error' } : r))
+          setCurrentJob(prev => prev ? {
+            ...prev,
+            processedEmails: (prev.processedEmails || 0) + 1,
+            failedVerifications: (prev.failedVerifications || 0) + 1
+          } : prev)
         }
-        
-        setCurrentJob(newJob)
-        setIsProcessing(true)
-        
-        // Start polling for job status
-        pollJobStatus(result.jobId)
-      } else {
-        toast.error(result.error || 'Failed to submit bulk verification job')
+        processed += 1
+        const percent = (processed / validRows.length) * 100
+        setProcessedCount(processed)
+        setProgress(percent)
       }
+      toast.success('Bulk verification completed')
+      setCurrentJob(prev => prev ? { ...prev, status: 'completed' } : prev)
+      invalidateCreditsData()
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to submit bulk verification job'
-      toast.error(errorMessage)
+      const msg = error instanceof Error ? error.message : 'Failed to run bulk verification'
+      toast.error(msg)
+      setCurrentJob(prev => prev ? { ...prev, status: 'failed', errorMessage: msg } : prev)
     } finally {
-      // setIsSubmittingJob(false) // Currently unused
+      setIsProcessing(false)
     }
   }
 
@@ -623,23 +559,8 @@ export default function VerifyPage() {
               </div>
               
               {currentJob.status === 'processing' && (
-                <div className="text-center">
-                  <Button
-                    onClick={async () => {
-                      const result = await stopBulkVerificationJob(currentJob.jobId)
-                      if (result.success) {
-                        toast.success('Job stopped successfully')
-                        setCurrentJob(null)
-                        setIsProcessing(false)
-                      } else {
-                        toast.error(result.error || 'Failed to stop job')
-                      }
-                    }}
-                    variant="destructive"
-                  >
-                    <Pause className="mr-2 h-4 w-4" />
-                    Stop Job
-                  </Button>
+                <div className="text-center text-sm text-gray-500">
+                  Processing in progress
                 </div>
               )}
               

@@ -11,6 +11,10 @@ interface VerifyEmailResponse {
   deliverable: boolean
   reason?: string
   error?: string
+  catch_all?: boolean
+  domain?: string
+  mx?: string
+  user_name?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -162,7 +166,11 @@ export async function POST(request: NextRequest) {
       status: serviceResult.status,
       deliverable: serviceResult.deliverable || false,
       reason: serviceResult.reason,
-      error: serviceResult.status === 'error' ? serviceResult.reason : undefined
+      error: serviceResult.status === 'error' ? serviceResult.reason : undefined,
+      catch_all: serviceResult.catch_all,
+      domain: serviceResult.domain,
+      mx: serviceResult.mx,
+      user_name: serviceResult.user_name
     }
 
     return NextResponse.json(response)
