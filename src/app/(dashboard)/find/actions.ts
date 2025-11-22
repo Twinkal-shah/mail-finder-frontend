@@ -71,35 +71,47 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
     }
     
     // Deduct credits for all search attempts (found, not_found, but not error)
-    if (result.status === 'found' || result.status === 'not_found') {
-      // Update user credits via backend API
-      try {
-        const deductResponse = await fetch('/api/user/credits/deduct', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount: 1,
-            type: 'find',
-            operation: 'email_find',
-            metadata: {
-              email: result.email,
-              confidence: result.confidence,
-              status: result.status
-            }
-          })
-        })
-        
-        if (!deductResponse.ok) {
-          console.error('Failed to deduct credits via backend:', await deductResponse.text())
-          // Continue anyway - the email was found successfully
+ // Deduct credit if the finder actually returned an email (means it was a real attempt)
+if (result.status === 'found' || result.status === 'not_found') {
+  try {
+    const { cookies } = await import('next/headers')
+    const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+
+    const cookieHeader = cookies().toString()
+    const token = await getAccessTokenFromCookies()
+
+    const origin = process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_LOCAL_FRONTEND_URL || "http://localhost:3000"
+
+    const deductResponse = await fetch(`${origin}/api/user/profile/updateProfile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        credits_find: credits.find - 1,
+        metadata: {
+          email: result.email,
+          confidence: result.confidence,
+          status: result.status,
+          operation: 'email_find'
         }
-      } catch (error) {
-        console.error('Error deducting credits:', error)
-        // Continue anyway - the email was found successfully
-      }
+      }),
+      cache: "no-store" // <-- REQUIRED IN SERVER ACTIONS
+    })
+
+    if (!deductResponse.ok) {
+      console.error('Failed to deduct credits:', await deductResponse.text())
     }
+  } catch (error) {
+    console.error('Error deducting credits:', error)
+  }
+}
+
+
+
+
 
     // Mock: Skip database save for demo
     // In a real app, this would save to the searches table

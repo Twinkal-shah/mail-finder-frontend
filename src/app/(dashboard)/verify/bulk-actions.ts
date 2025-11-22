@@ -2,345 +2,160 @@
 
 import { revalidatePath } from 'next/cache'
 import type { BulkVerificationJob, EmailData } from './types'
+import { apiGet, apiPost } from '@/lib/api'
+type CreditsResponse = {
+  credits_find?: number
+  credits_verify?: number
+  find?: number
+  verify?: number
+}
 
-/**
- * Submit email data for bulk verification as a background job
- */
-export async function submitBulkVerificationJob(emailsData: Array<{email: string, [key: string]: unknown}>, filename?: string): Promise<{
-  success: boolean
-  jobId?: string
-  error?: string
-}> {
+export async function submitBulkVerificationJob(
+  emailsData: EmailData[],
+  filename?: string
+): Promise<{ success: boolean; jobId?: string; error?: string }> {
   try {
     if (!emailsData || !Array.isArray(emailsData) || emailsData.length === 0) {
-      return {
-        success: false,
-        error: 'Invalid emails data array'
-      }
+      return { success: false, error: 'No emails provided' }
     }
 
-    // Use server-side function instead of client-side getCurrentUser
     const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
     const user = await getCurrentUserFromCookies()
     if (!user) {
-      return {
-        success: false,
-        error: 'Unauthorized'
-      }
+      return { success: false, error: 'Unauthorized' }
     }
 
-    // Check if plan has expired via backend API
     try {
-      const profileRes = await fetch('/api/user/profile/getProfile', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
-      if (profileRes.ok) {
-        const profile = await profileRes.json()
-        if (profile.plan_expired) {
-          return {
-            success: false,
-            error: 'Your plan has expired. Please upgrade to Pro.'
-          }
-        }
+      const creditsRes = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
+      if (!creditsRes.ok || !creditsRes.data) {
+        return { success: false, error: 'Failed to check your credits. Please try again.' }
       }
-    } catch (error) {
-      console.error('Error checking plan status:', error)
-      // Continue with credit check even if plan check fails
-    }
-
-    // Check if user has Verify Credits via backend API
-    try {
-      const creditsRes = await fetch('/api/user/credits', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
-      if (!creditsRes.ok) {
-        return {
-          success: false,
-          error: 'Failed to check your credits. Please try again.'
-        }
+      const creditsData = creditsRes.data as CreditsResponse
+      const availableVerify = Number(creditsData.verify ?? creditsData.credits_verify ?? 0)
+      const required = emailsData.length
+      if (availableVerify === 0) {
+        return { success: false, error: "You don't have any Verify Credits. Please purchase more credits." }
       }
-      
-      const creditsData = await creditsRes.json()
-      const availableCredits = creditsData.verify || 0
-      const requiredCredits = emailsData.length
-      
-      if (availableCredits === 0) {
-        return {
-          success: false,
-          error: "You don't have any Verify Credits to perform this action. Please purchase more credits."
-        }
-      }
-      
-      if (availableCredits < requiredCredits) {
-        return {
-          success: false,
-          error: `You need ${requiredCredits} Verify Credits but only have ${availableCredits}. Please purchase more credits.`
-        }
+      if (availableVerify < required) {
+        return { success: false, error: `You need ${required} Verify Credits but only have ${availableVerify}. Please purchase more credits.` }
       }
     } catch (error) {
       console.error('Error checking credits:', error)
-      return {
-        success: false,
-        error: 'Failed to check your credits. Please try again.'
-      }
+      return { success: false, error: 'Failed to check your credits. Please try again.' }
     }
 
-    // Create job via backend API
     const jobId = crypto.randomUUID()
-    
+
     try {
-      const createResponse = await fetch('/api/bulk-verify/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const createResponse = await apiPost<Record<string, unknown>>(
+        '/api/bulk-verify/create',
+        {
           jobId,
-          emails: emailsData.map(data => ({ ...data, status: 'pending' })),
+          emailsData: emailsData.map(e => ({ ...e, status: 'pending' })),
           filename,
           total_emails: emailsData.length
-        })
-      })
-      
+        },
+        { useProxy: true }
+      )
       if (!createResponse.ok) {
-        const errorText = await createResponse.text()
-        console.error('Failed to create bulk verification job:', errorText)
-        return {
-          success: false,
-          error: 'Failed to create verification job'
-        }
+        console.error('Failed to create bulk verification job:', createResponse.error)
+        return { success: false, error: 'Failed to create verification job' }
       }
     } catch (error) {
       console.error('Error creating bulk verification job:', error)
-      return {
-        success: false,
-        error: 'Failed to create verification job'
-      }
+      return { success: false, error: 'Failed to create verification job' }
     }
 
-    // Background processing will be triggered by the backend API
-    // The backend will handle the job processing automatically
+    try {
+      const processResponse = await apiPost<Record<string, unknown>>(
+        '/api/bulk-verify/jobs',
+        { jobId },
+        { useProxy: true }
+      )
+      if (!processResponse.ok) {
+        return { success: false, error: 'Failed to start background processing' }
+      }
+    } catch {
+      return { success: false, error: 'Failed to start background processing' }
+    }
 
     revalidatePath('/(dashboard)', 'layout')
 
-    return {
-      success: true,
-      jobId
-    }
+    return { success: true, jobId }
   } catch (error) {
-    console.error('Submit bulk verification job error:', error)
-    return {
-      success: false,
-      error: 'An unexpected error occurred. Please try again.'
-    }
+    console.error('Error submitting bulk verification job:', error)
+    return { success: false, error: 'An unexpected error occurred. Please try again.' }
   }
 }
 
-/**
- * Get the status of a specific bulk verification job
- */
-export async function getBulkVerificationJobStatus(jobId: string): Promise<{
-  success: boolean
-  job?: BulkVerificationJob
-  error?: string
-}> {
+export async function getBulkVerificationJobStatus(jobId: string): Promise<{ success: boolean; job?: BulkVerificationJob; error?: string }> {
   try {
-    // Use server-side function instead of client-side getCurrentUser
     const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
     const user = await getCurrentUserFromCookies()
     if (!user) {
-      return {
-        success: false,
-        error: 'Unauthorized'
-      }
+      return { success: false, error: 'Unauthorized' }
     }
 
-    // Fetch job status via backend API
     try {
-      const jobRes = await fetch(`/api/bulk-verify/status?jobId=${jobId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
-      if (!jobRes.ok) {
-        console.error('Failed to fetch job:', await jobRes.text())
-        return {
-          success: false,
-          error: 'Job not found'
-        }
+      const jobRes = await apiGet<Record<string, unknown>>(`/api/bulk-verify/status?jobId=${jobId}`, { useProxy: true })
+
+      if (!jobRes.ok || !jobRes.data) {
+        console.error('Failed to fetch verification job:', jobRes.error)
+        return { success: false, error: 'Job not found' }
       }
-      
-      const jobData = await jobRes.json()
+
+      const jobData = jobRes.data as Record<string, unknown>
       const job: BulkVerificationJob = {
-        jobId: jobData.jobId || jobData.id,
-        status: jobData.status,
-        totalEmails: jobData.totalEmails || jobData.total_emails,
-        processedEmails: jobData.processedEmails || jobData.processed_emails,
-        successfulVerifications: jobData.successfulVerifications || jobData.successful_verifications,
-        failedVerifications: jobData.failedVerifications || jobData.failed_verifications,
-        emailsData: jobData.emailsData || jobData.emails_data,
-        errorMessage: jobData.errorMessage || jobData.error_message,
-        createdAt: jobData.createdAt || jobData.created_at,
-        updatedAt: jobData.updatedAt || jobData.updated_at,
-        completedAt: jobData.completedAt || jobData.completed_at
+        jobId: (jobData['jobId'] as string) || (jobData['id'] as string),
+        status: jobData['status'] as BulkVerificationJob['status'],
+        totalEmails: (jobData['totalEmails'] as number) ?? (jobData['total_emails'] as number),
+        processedEmails: (jobData['processedEmails'] as number) ?? (jobData['processed_emails'] as number),
+        successfulVerifications: (jobData['successfulVerifications'] as number) ?? (jobData['successful_verifications'] as number),
+        failedVerifications: (jobData['failedVerifications'] as number) ?? (jobData['failed_verifications'] as number),
+        emailsData: (jobData['emailsData'] as EmailData[]) ?? (jobData['emails_data'] as EmailData[]),
+        errorMessage: (jobData['errorMessage'] as string) ?? (jobData['error_message'] as string),
+        filename: jobData['filename'] as string,
+        createdAt: (jobData['createdAt'] as string) ?? (jobData['created_at'] as string),
+        updatedAt: (jobData['updatedAt'] as string) ?? (jobData['updated_at'] as string),
+        completedAt: (jobData['completedAt'] as string) ?? (jobData['completed_at'] as string)
       }
 
-      return {
-        success: true,
-        job
-      }
+      return { success: true, job }
     } catch (error) {
-      console.error('Error fetching job:', error)
-      return {
-        success: false,
-        error: 'Job not found'
-      }
+      console.error('Error fetching verification job:', error)
+      return { success: false, error: 'Job not found' }
     }
   } catch (error) {
-    console.error('Error getting job status:', error)
-    return {
-      success: false,
-      error: 'Failed to get job status'
-    }
+    console.error('Error getting verification job status:', error)
+    return { success: false, error: 'Failed to get job status' }
   }
 }
 
-/**
- * Get all bulk verification jobs for the current user
- */
-export async function getUserBulkVerificationJobs(): Promise<{
-  success: boolean
-  jobs?: BulkVerificationJob[]
-  error?: string
-}> {
+export async function stopBulkVerificationJob(jobId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    // Use server-side function instead of client-side getCurrentUser
     const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
     const user = await getCurrentUserFromCookies()
     if (!user) {
-      return {
-        success: false,
-        error: 'Unauthorized'
-      }
+      return { success: false, error: 'Unauthorized' }
     }
 
-    // Fetch user jobs via backend API
     try {
-      const jobsRes = await fetch('/api/bulk-verify/jobs', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
-      if (!jobsRes.ok) {
-        console.error('Failed to fetch jobs:', await jobsRes.text())
-        return {
-          success: false,
-          error: 'Failed to fetch jobs'
-        }
-      }
-      
-      const data = await jobsRes.json()
-      const jobs: Array<Record<string, unknown>> = (data.jobs || []) as Array<Record<string, unknown>>
-      const formattedJobs: BulkVerificationJob[] = jobs.map((j: Record<string, unknown>) => {
-        const job = j as Record<string, unknown>
-        return {
-          jobId: (job.jobId as string) || (job.id as string),
-          status: job.status as BulkVerificationJob['status'],
-          totalEmails: (job.totalEmails as number) || (job.total_emails as number),
-          processedEmails: (job.processedEmails as number) || (job.processed_emails as number),
-          successfulVerifications: (job.successfulVerifications as number) || (job.successful_verifications as number),
-          failedVerifications: (job.failedVerifications as number) || (job.failed_verifications as number),
-          emailsData: (job.emailsData as EmailData[]) ?? (job.emails_data as EmailData[]),
-          errorMessage: (job.errorMessage as string) || (job.error_message as string),
-          createdAt: (job.createdAt as string) || (job.created_at as string),
-          updatedAt: (job.updatedAt as string) || (job.updated_at as string)
-        }
-      })
+      const stopRes = await apiPost<Record<string, unknown>>(`/api/bulk-verify/stop?jobId=${jobId}`, undefined, { useProxy: true })
 
-      return {
-        success: true,
-        jobs: formattedJobs
-      }
-    } catch (error) {
-      console.error('Error fetching user jobs:', error)
-      return {
-        success: false,
-        error: 'Failed to fetch jobs'
-      }
-    }
-  } catch (error) {
-    console.error('Error in getUserBulkVerificationJobs:', error)
-    return {
-      success: false,
-      error: 'Internal server error'
-    }
-  }
-}
-
-/**
- * Stop a running bulk verification job
- */
-export async function stopBulkVerificationJob(jobId: string): Promise<{
-  success: boolean
-  error?: string
-}> {
-  try {
-    // Use server-side function instead of client-side getCurrentUser
-    const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
-    const user = await getCurrentUserFromCookies()
-    if (!user) {
-      return {
-        success: false,
-        error: 'Unauthorized'
-      }
-    }
-
-    // Stop job via backend API
-    try {
-      const stopRes = await fetch(`/api/bulk-verify/stop?jobId=${jobId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-      
       if (!stopRes.ok) {
-        console.error('Failed to stop job:', await stopRes.text())
-        return {
-          success: false,
-          error: 'Failed to stop job'
-        }
+        console.error('Failed to stop verification job:', stopRes.error)
+        return { success: false, error: 'Failed to stop job' }
       }
     } catch (error) {
-      console.error('Error stopping job:', error)
-      return {
-        success: false,
-        error: 'Failed to stop job'
-      }
+      console.error('Error stopping verification job:', error)
+      return { success: false, error: 'Failed to stop job' }
     }
 
-    revalidatePath('/verify')
-    
-    return {
-      success: true
-    }
+    revalidatePath('/(dashboard)', 'layout')
+
+    return { success: true }
   } catch (error) {
     console.error('Error in stopBulkVerificationJob:', error)
-    return {
-      success: false,
-      error: 'Internal server error'
-    }
+    return { success: false, error: 'Internal server error' }
   }
 }

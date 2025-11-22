@@ -24,20 +24,21 @@ export default async function Layout({
   
   // If no user found via cookies, don't redirect immediately
   // Let the client-side handle authentication
-  if (!user) {
-    console.log('No user session found server-side, proceeding with client auth...')
-    // Return the layout with minimal data, client will handle auth
-    return (
-      <DashboardLayout userProfile={{
-        full_name: 'Guest User', // More appropriate message for non-authenticated users
-        credits: 0,
-        email: 'Please log in',
-        company: null,
-        plan: 'free',
-        plan_expiry: null,
-        credits_find: 0,
-        credits_verify: 0
-      }}>
+ if (!user) {
+  return (
+    <DashboardLayout userProfile={{
+      full_name: '',
+      email: '',
+      company: null,
+      plan: 'free',
+      plan_expiry: null,
+
+      // ⭐ Prevent flicker — do NOT initialize credits to 0
+      credits: undefined as any,
+      credits_find: undefined as any,
+      credits_verify: undefined as any,
+    }}>
+
         {children}
       </DashboardLayout>
     )
@@ -73,15 +74,21 @@ export default async function Layout({
   // Use the user data from cookies to create the profile
   // Backend returns: { _id, email, firstName, lastName } (your backend format)
   // Frontend expects: { full_name, email, credits, etc. }
+const serverFind = Number(fullProfile?.credits_find ?? user.credits_find ?? 0)
+const serverVerify = Number(fullProfile?.credits_verify ?? user.credits_verify ?? 0)
+
+// ⭐ FINAL FIX: remove flicker by ignoring old backend "credits"
+const serverTotal = serverFind + serverVerify
+
   const userProfile = {
-    full_name: fullProfile?.full_name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.full_name || user.email?.split('@')[0] || 'User',
-    credits: (fullProfile?.credits_find || user.credits_find || 0) + (fullProfile?.credits_verify || user.credits_verify || 0),
+    full_name: fullProfile?.full_name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.full_name || null,
+    credits: serverFind + serverVerify,
     email: fullProfile?.email || user.email || '',
     company: fullProfile?.company ?? user.company ?? null,
     plan: fullProfile?.plan || user.plan || 'free',
     plan_expiry: fullProfile?.plan_expiry ?? user.plan_expiry ?? null,
-    credits_find: fullProfile?.credits_find ?? user.credits_find ?? 0,
-    credits_verify: fullProfile?.credits_verify ?? user.credits_verify ?? 0
+    credits_find: serverFind,
+    credits_verify: serverVerify
   }
 
   return (

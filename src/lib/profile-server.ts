@@ -1,4 +1,5 @@
 import { apiGet, apiPut } from './api'
+import { cookies } from 'next/headers'
 
 type Profile = {
   id: string
@@ -10,57 +11,65 @@ type Profile = {
   lemonsqueezy_customer_id?: string | null
 }
 
-// Initialize user credits for new users (server-side only)
 export async function initializeUserCredits(): Promise<boolean> {
-  try {
-    // If you want to initialize credits for a new user on backend,
-    // implement it there; for now, no client-side action needed.
-    return true
-  } catch (error) {
-    console.error('Error in initializeUserCredits:', error)
-    return false
-  }
+  return true
 }
 
-// Update profile function for server-side operations
 export async function updateProfile(updates: Partial<Profile>): Promise<Profile | null> {
   try {
     const res = await apiPut<Profile>('/api/user/profile/updateProfile', updates, { useProxy: true })
     if (!res.ok || !res.data) return null
     return res.data as Profile
-  } catch (error) {
-    console.error('Error in updateProfile:', error)
+  } catch {
     return null
   }
 }
 
-// Get user credits breakdown (server-side)
 export async function getUserCredits(): Promise<{
   total: number
   find: number
   verify: number
 } | null> {
   try {
+    const cookieStore = await cookies()
+    const cookieHeader = cookieStore.toString()
+
+    const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+    const token = await getAccessTokenFromCookies()
+
     interface CreditsResponse {
       credits_find?: number
-      find?: number
-      findCredits?: number
       credits_verify?: number
+      credits?: number
+      find?: number
       verify?: number
+      findCredits?: number
       verifyCredits?: number
     }
-    const res = await apiGet<CreditsResponse>('/api/user/credits', { useProxy: true })
+
+    // ⭐ DO NOT use baseURL here
+    const res = await apiGet<CreditsResponse>('/api/user/credits', {
+      useProxy: true,
+      headers: {
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      }
+    })
+
     if (!res.ok || !res.data) return null
-    const d = res.data
+
+    const d = res.data as CreditsResponse
+
     const find = Number(d.credits_find ?? d.find ?? d.findCredits ?? 0)
     const verify = Number(d.credits_verify ?? d.verify ?? d.verifyCredits ?? 0)
+
     return {
       total: find + verify,
       find,
       verify
     }
   } catch (error) {
-    console.error('Error in getUserCredits:', error)
+    console.error("Error fetching credits:", error)
     return null
   }
 }

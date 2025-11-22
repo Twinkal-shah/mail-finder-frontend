@@ -13,18 +13,21 @@ export type Profile = {
 }
 
 export async function getProfileData(): Promise<Profile | null> {
-  const res = await apiGet<Profile>('/api/user/profile/getProfile', { useProxy: true })
+  const res = await apiGet<Record<string, unknown>>('/api/user/profile/getProfile', { useProxy: true })
   if (!res.ok || !res.data) return null
-  return res.data as Profile
+  const d = res.data as Record<string, unknown>
+  const profile = (d && typeof d === 'object' && 'data' in d ? (d.data as Profile) : (d as unknown as Profile))
+  return profile || null
 }
 
 export async function getProfileDataClient(): Promise<Profile | null> {
   try {
-    const res = await apiGet<Profile>('/api/user/profile/getProfile', { useProxy: true })
+    const res = await apiGet<Record<string, unknown>>('/api/user/profile/getProfile', { useProxy: true })
     if (!res.ok || !res.data) return null
-    return res.data as Profile
+    const d = res.data as Record<string, unknown>
+    const profile = (d && typeof d === 'object' && 'data' in d ? (d.data as Profile) : (d as unknown as Profile))
+    return profile || null
   } catch {
-    // swallow network / 404 errors on client; UI will show fallback
     return null
   }
 }
