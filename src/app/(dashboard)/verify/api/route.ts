@@ -133,32 +133,31 @@ export async function POST(request: NextRequest) {
     // Call email verification service
     const serviceResult = await verifyEmail(verificationRequest)
 
-    // Deduct credits after successful verification via backend API (use profile endpoint)
-    try {
-      const updateHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (cookie) updateHeaders.Cookie = cookie
-      if (accessToken) updateHeaders.Authorization = `Bearer ${accessToken}`
-      const deductResponse = await fetch(`${backend}/api/user/profile/updateProfile`, {
-        method: 'PUT',
-        headers: updateHeaders,
-        body: JSON.stringify({
-          credits_verify: availableCredits - 1,
-          metadata: {
-            email: body.email,
-            result: serviceResult.status,
-            operation: 'email_verify'
-          }
+    // Deduct credits only when verification status is valid
+    if (serviceResult.status === 'valid') {
+      try {
+        const updateHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (cookie) updateHeaders.Cookie = cookie
+        if (accessToken) updateHeaders.Authorization = `Bearer ${accessToken}`
+        const deductResponse = await fetch(`${backend}/api/user/profile/updateProfile`, {
+          method: 'PUT',
+          headers: updateHeaders,
+          body: JSON.stringify({
+            credits_verify: availableCredits - 1,
+            metadata: {
+              email: body.email,
+              result: serviceResult.status,
+              operation: 'email_verify'
+            }
+          })
         })
-      })
-      
-      if (!deductResponse.ok) {
-        console.error('Failed to deduct credits via backend:', await deductResponse.text())
-        // Don't fail the entire request if credit deduction fails
+        
+        if (!deductResponse.ok) {
+          console.error('Failed to deduct credits via backend:', await deductResponse.text())
+        }
+      } catch (deductError) {
+        console.error('Error in deductCredits:', deductError)
       }
-    } catch (deductError) {
-      console.error('Error in deductCredits:', deductError)
-      // Don't fail the entire request if credit deduction fails
-      // but log it for debugging
     }
     // Map service result to API response
     const response: VerifyEmailResponse = {

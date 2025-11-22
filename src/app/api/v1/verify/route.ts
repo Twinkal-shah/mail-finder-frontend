@@ -59,15 +59,17 @@ export async function POST(request: NextRequest) {
     // Call email verification service
     const serviceResult = await verifyEmail(verificationRequest)
 
-    // Deduct credits after successful API call
-    const creditsDeducted = await deductApiCredits(authResult.userId!, 1, 'verify')
-    if (!creditsDeducted) {
-      console.error('Failed to deduct credits for user:', authResult.userId)
-      // Continue with response but log the error
+    // Deduct credits only when verification status is valid
+    let creditsDeducted = false
+    if (serviceResult.status === 'valid') {
+      creditsDeducted = await deductApiCredits(authResult.userId!, 1, 'verify')
+      if (!creditsDeducted) {
+        console.error('Failed to deduct credits for user:', authResult.userId)
+      }
     }
 
     // Calculate remaining credits (subtract 1 if deduction was successful)
-    const remainingVerifyCredits = creditsDeducted 
+    const remainingVerifyCredits = creditsDeducted
       ? (authResult.creditsVerify || 0) - 1
       : (authResult.creditsVerify || 0)
 

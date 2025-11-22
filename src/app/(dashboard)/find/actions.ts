@@ -72,7 +72,7 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
     
     // Deduct credits for all search attempts (found, not_found, but not error)
  // Deduct credit if the finder actually returned an email (means it was a real attempt)
-if (result.status === 'found' || result.status === 'not_found') {
+if (result.status === 'found') {
   try {
     const { cookies } = await import('next/headers')
     const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
