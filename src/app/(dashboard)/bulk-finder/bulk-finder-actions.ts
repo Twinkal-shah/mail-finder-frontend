@@ -341,7 +341,9 @@ export async function recoverStuckJobsAction(): Promise<{
 }> {
   try {
     try {
-      await fetch('/api/init-jobs', { method: 'POST' })
+      const { getJobQueue } = await import('@/lib/job-queue')
+      const jobQueue = getJobQueue()
+      await jobQueue.recoverStuckJobs()
     } catch {}
     revalidatePath('/bulk-finder')
     return { success: true }

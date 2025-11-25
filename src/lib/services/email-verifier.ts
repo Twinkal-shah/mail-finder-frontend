@@ -124,16 +124,13 @@ export async function verifyEmailMock(request: EmailVerifierRequest): Promise<Em
  * Real email verifier function using external API
  */
 export async function verifyEmailReal(request: EmailVerifierRequest): Promise<EmailVerifierResult> {
-  const apiUrl = 'http://173.249.7.231:8500'
-  
-  // Add rate limiting - wait 1 second between requests to prevent API overload
+  const apiUrl = 'http://server.mailsfinder.com:8081'
   await new Promise(resolve => setTimeout(resolve, 1000))
-  
+
   try {
-    // Create AbortController for timeout handling
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-    
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
     const response = await fetch(`${apiUrl}/verify`, {
       method: 'POST',
       headers: {
@@ -144,32 +141,81 @@ export async function verifyEmailReal(request: EmailVerifierRequest): Promise<Em
       }),
       signal: controller.signal
     })
-    
+
     clearTimeout(timeoutId)
-    
+
     if (!response.ok) {
       const errorText = await response.text()
       throw new Error(`API request failed: ${response.status} - ${errorText}`)
     }
-    
-    const data = await response.json()
-    
-    // Parse the API response structure - status is nested in 'valid' object
-    const validData = data.valid || {}
-    const status = validData.status || 'unknown'
-    
+
+    interface VerifierApiValid {
+      status?: string
+      connections?: number
+      disposable?: boolean
+      role_account?: boolean
+      message?: string
+      catch_all?: boolean
+      domain?: string
+      mx?: string
+      user_name?: string
+    }
+    interface VerifierApiResponse {
+      status?: string
+      confidence?: number
+      connections?: number
+      disposable?: boolean
+      role_account?: boolean
+      message?: string
+      error?: string
+      catch_all?: boolean
+      domain?: string
+      mx?: string
+      user_name?: string
+      email_status?: string
+      result?: { status?: string }
+      valid?: VerifierApiValid | boolean
+      details?: VerifierApiValid
+    }
+
+    const data = await response.json() as VerifierApiResponse
+
+    const validData = typeof data.valid === 'object' && data.valid ? (data.valid as VerifierApiValid) : undefined
+    const detailsData = data.details
+    const resultData = typeof data.result === 'object' && data.result ? data.result : undefined
+
+    const rawStatus = (validData?.status || detailsData?.status || resultData?.status || data.email_status || data.status)
+
+    let normalizedStatus: EmailVerifierResult['status'] = rawStatus && typeof rawStatus === 'string' ? (rawStatus as EmailVerifierResult['status']) : 'unknown'
+
+    const connections = typeof validData?.connections === 'number' ? validData.connections : (typeof detailsData?.connections === 'number' ? detailsData.connections : (typeof data.connections === 'number' ? data.connections : undefined))
+    let confidence = typeof data.confidence === 'number' ? data.confidence : (typeof connections === 'number' ? Math.max(0, Math.min(100, connections * 20)) : 0)
+
+    const reason = typeof validData?.message === 'string' ? validData.message : (typeof detailsData?.message === 'string' ? detailsData.message : (typeof data.message === 'string' ? data.message : (typeof data.error === 'string' ? data.error : undefined)))
+    const disposable = typeof validData?.disposable === 'boolean' ? validData.disposable : (typeof detailsData?.disposable === 'boolean' ? detailsData.disposable : (typeof data.disposable === 'boolean' ? data.disposable : false))
+    const role_account = typeof validData?.role_account === 'boolean' ? validData.role_account : (typeof detailsData?.role_account === 'boolean' ? detailsData.role_account : (typeof data.role_account === 'boolean' ? data.role_account : false))
+    const catch_all = typeof validData?.catch_all === 'boolean' ? validData.catch_all : (typeof detailsData?.catch_all === 'boolean' ? detailsData.catch_all : (typeof data.catch_all === 'boolean' ? data.catch_all : false))
+    const domain = typeof validData?.domain === 'string' ? validData.domain : (typeof detailsData?.domain === 'string' ? detailsData.domain : (typeof data.domain === 'string' ? data.domain : undefined))
+    const mx = typeof validData?.mx === 'string' ? validData.mx : (typeof detailsData?.mx === 'string' ? detailsData.mx : (typeof data.mx === 'string' ? data.mx : undefined))
+    const user_name = typeof validData?.user_name === 'string' ? validData.user_name : (typeof detailsData?.user_name === 'string' ? detailsData.user_name : (typeof data.user_name === 'string' ? data.user_name : undefined))
+
+    if (normalizedStatus === 'unknown' && typeof reason === 'string' && reason.toLowerCase().includes('smtp failed for all mx records')) {
+      normalizedStatus = 'risky'
+      if (confidence === 0) confidence = 50
+    }
+
     return {
       email: request.email,
-      status: status as EmailVerifierResult['status'],
-      confidence: validData.connections ? validData.connections * 20 : 0, // Convert connections to confidence percentage
-      deliverable: status === 'valid',
-      disposable: validData.disposable || false,
-      role_account: validData.role_account || false,
-      reason: validData.message || undefined,
-      catch_all: validData.catch_all || false,
-      domain: validData.domain || undefined,
-      mx: validData.mx || undefined,
-      user_name: validData.user_name || undefined
+      status: normalizedStatus,
+      confidence,
+      deliverable: normalizedStatus === 'valid',
+      disposable,
+      role_account,
+      reason,
+      catch_all,
+      domain,
+      mx,
+      user_name
     }
   } catch (error) {
     console.error('Email verifier API error:', error)

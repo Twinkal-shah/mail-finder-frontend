@@ -66,7 +66,7 @@ export async function findEmail(request: FindEmailRequest): Promise<FindEmailRes
     const result: EmailResult = {
       email: serviceResult.email || null,
       confidence: serviceResult.confidence || 0,
-      status: serviceResult.status === 'valid' ? 'found' : 
+      status: serviceResult.status === 'valid' ? 'found' :
               serviceResult.status === 'invalid' ? 'not_found' : 'error'
     }
     

@@ -15,7 +15,6 @@ export async function GET(req: NextRequest) {
       },
       cache: 'no-store',
     })
-    
     const contentType = res.headers.get('content-type') || 'application/json'
     const text = await res.text()
     return new NextResponse(text, { status: res.status, headers: { 'content-type': contentType } })

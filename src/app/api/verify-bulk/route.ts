@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 export async function POST(req: NextRequest) {
   const backend = process.env.LOCAL_URL || process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
   const urlPrimary = `${backend}/api/email/verifyBulkEmail`
+
   const cookie = req.headers.get('cookie') || ''
   const authHeader = req.headers.get('authorization') || ''
   const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
   const token = authHeader ? undefined : await getAccessTokenFromCookies()
-  
+
   try {
     const incoming = await req.json().catch(async () => {
       const text = await req.text()
@@ -18,6 +21,7 @@ export async function POST(req: NextRequest) {
       : (typeof incoming === 'object' && Array.isArray((incoming as Record<string, unknown>)?.emails))
         ? ((incoming as Record<string, unknown>).emails as unknown[]).map(v => String(v))
         : []
+
     const payload = JSON.stringify({ emails })
 
     const res = await fetch(urlPrimary, {
@@ -30,6 +34,7 @@ export async function POST(req: NextRequest) {
       },
       body: payload,
     })
+
     const contentType = res.headers.get('content-type') || 'application/json'
     const text = await res.text()
     return new NextResponse(text, { status: res.status, headers: { 'content-type': contentType } })
@@ -37,5 +42,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Proxy error', message: (error as Error).message }, { status: 500 })
   }
 }
-
-export const runtime = 'nodejs'

@@ -1,4 +1,4 @@
-import { processJobInBackground } from './bulk-finder-processor'
+import { processJobInBackground, recoverStuckJobs as recoverStuckJobsInternal } from './bulk-finder-processor'
 
 class JobQueue {
   private static instance: JobQueue
@@ -33,7 +33,7 @@ class JobQueue {
 
   public async recoverStuckJobs() {
     try {
-      await fetch('/api/init-jobs', { method: 'POST' })
+      await recoverStuckJobsInternal()
     } catch (error) {
       console.error('Queue recoverStuckJobs error:', error)
     }

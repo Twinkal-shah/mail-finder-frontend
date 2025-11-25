@@ -70,7 +70,7 @@ export async function findEmailMock(request: EmailFinderRequest): Promise<EmailF
  * Real email finder function using external API with timeout and retry logic
  */
 export async function findEmailReal(request: EmailFinderRequest): Promise<EmailFinderResult> {
-  const apiUrl = 'http://173.249.7.231:8500'
+  const apiUrl = 'http://server.mailsfinder.com:8081'
   const maxRetries = 3
   const timeoutMs = 30000 // 30 seconds timeout
   
@@ -99,21 +99,45 @@ export async function findEmailReal(request: EmailFinderRequest): Promise<EmailF
       }
       
       const data = await response.json()
-      
-      // Map API response to our interface
-      // API returns: { email, status, message, connections, domain, mx, etc. }
+      const payload = typeof data?.result === 'object' && data.result !== null ? data.result : data
+      const rawStatus = typeof payload?.status === 'string' ? payload.status : (typeof data?.status === 'string' ? data.status : undefined)
+      const email: string | null = typeof payload?.email === 'string' ? payload.email : null
+      let normalizedStatus: 'valid' | 'invalid' | 'error'
+      if (email) {
+        normalizedStatus = 'valid'
+      } else if (rawStatus) {
+        const s = rawStatus.toLowerCase()
+        if (s === 'valid' || s === 'found' || s === 'success') {
+          normalizedStatus = 'valid'
+        } else if (s === 'invalid' || s === 'not_found' || s === 'failed') {
+          normalizedStatus = 'invalid'
+        } else {
+          normalizedStatus = 'error'
+        }
+      } else {
+        normalizedStatus = 'invalid'
+      }
+      const confidence = typeof payload?.confidence === 'number' ? payload.confidence : (normalizedStatus === 'valid' ? 95 : 0)
+      const message = typeof payload?.message === 'string' ? payload.message : (normalizedStatus === 'valid' ? 'Email found' : normalizedStatus === 'invalid' ? 'No email found' : 'Email search completed')
+      const catch_all = typeof payload?.catch_all === 'boolean' ? payload.catch_all : data?.catch_all
+      const connections = typeof payload?.connections === 'number' ? payload.connections : data?.connections
+      const domain = typeof payload?.domain === 'string' ? payload.domain : (typeof data?.domain === 'string' ? data.domain : undefined)
+      const mx = typeof payload?.mx === 'string' ? payload.mx : (typeof data?.mx === 'string' ? data.mx : undefined)
+      const time_exec = typeof payload?.time_exec === 'number' ? payload.time_exec : data?.time_exec
+      const user_name = typeof payload?.user_name === 'string' ? payload.user_name : (typeof data?.user_name === 'string' ? data.user_name : undefined)
+      const ver_ops = typeof payload?.ver_ops === 'number' ? payload.ver_ops : data?.ver_ops
       return {
-        email: data.email || null,
-        confidence: data.confidence || (data.status === 'valid' ? 95 : 0),
-        status: data.status || 'invalid',
-        message: data.message || 'Email search completed',
-        catch_all: data.catch_all, // Use actual API value, don't default to false
-        connections: data.connections,
-        domain: data.domain,
-        mx: data.mx,
-        time_exec: data.time_exec,
-        user_name: data.user_name,
-        ver_ops: data.ver_ops
+        email,
+        confidence,
+        status: normalizedStatus,
+        message,
+        catch_all,
+        connections,
+        domain,
+        mx,
+        time_exec,
+        user_name,
+        ver_ops
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'

@@ -28,8 +28,8 @@ export function useUserProfile() {
           const res = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
           if (res.ok && res.data) {
             const d = res.data as Record<string, unknown>
-            findCredits = Number(d['find'] ?? d['credits_find'] ?? 0)
-            verifyCredits = Number(d['verify'] ?? d['credits_verify'] ?? 0)
+            findCredits = Math.max(Number(d['find'] ?? d['credits_find'] ?? 0), 0)
+            verifyCredits = Math.max(Number(d['verify'] ?? d['credits_verify'] ?? 0), 0)
           }
         } catch {}
         if (p) {
@@ -38,9 +38,9 @@ export function useUserProfile() {
             email: p.email || '',
             full_name: (p.full_name as string) || 'User',
             plan: (p.plan as string) || 'free',
-            credits_find: findCredits,
-            credits_verify: verifyCredits,
-            total_credits: findCredits + verifyCredits
+            credits_find: Math.max(findCredits, 0),
+            credits_verify: Math.max(verifyCredits, 0),
+            total_credits: Math.max(findCredits, 0) + Math.max(verifyCredits, 0)
           }
           setProfile(profileData)
         } else {

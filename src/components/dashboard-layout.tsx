@@ -83,7 +83,7 @@ const getNavigation = (userPlan: string) => {
 export function DashboardLayout({ children, userProfile }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const initialCredits =
-  (userProfile.credits_find || 0) + (userProfile.credits_verify || 0)
+  Math.max(userProfile.credits_find || 0, 0) + Math.max(userProfile.credits_verify || 0, 0)
 
 const [currentProfile, setCurrentProfile] = useState({
   ...userProfile,
@@ -105,17 +105,17 @@ const [currentProfile, setCurrentProfile] = useState({
   if ('credits' in up) {
     delete up.credits
   }
-          let findCredits = Number(currentProfile.credits_find ?? 0)
-          let verifyCredits = Number(currentProfile.credits_verify ?? 0)
+          let findCredits = Math.max(Number(currentProfile.credits_find ?? 0), 0)
+          let verifyCredits = Math.max(Number(currentProfile.credits_verify ?? 0), 0)
           try {
             const res = await apiGet<Record<string, unknown>>('/api/user/credits', { useProxy: true })
             if (res.ok && res.data) {
               const d = res.data as Record<string, unknown>
-              findCredits = Number(d['find'] ?? d['credits_find'] ?? findCredits)
-              verifyCredits = Number(d['verify'] ?? d['credits_verify'] ?? verifyCredits)
+              findCredits = Math.max(Number(d['find'] ?? d['credits_find'] ?? findCredits), 0)
+              verifyCredits = Math.max(Number(d['verify'] ?? d['credits_verify'] ?? verifyCredits), 0)
             }
           } catch {}
-          const totalCredits = findCredits + verifyCredits
+          const totalCredits = Math.max(findCredits, 0) + Math.max(verifyCredits, 0)
 
           const fullNameValue = typeof up.full_name === 'string' ? (up.full_name as string) : (currentProfile.full_name || 'User')
           const emailValue = typeof up.email === 'string' ? (up.email as string) : (currentProfile.email || '')
@@ -144,9 +144,9 @@ const [currentProfile, setCurrentProfile] = useState({
             const userData = JSON.parse(userDataStr)
             console.log('Parsed user data:', userData)
             const nameFromLocal = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.full_name || null
-            const findCredits = Number(currentProfile.credits_find ?? 0)
-            const verifyCredits = Number(currentProfile.credits_verify ?? 0)
-            const totalCredits = findCredits + verifyCredits
+            const findCredits = Math.max(Number(currentProfile.credits_find ?? 0), 0)
+            const verifyCredits = Math.max(Number(currentProfile.credits_verify ?? 0), 0)
+            const totalCredits = Math.max(findCredits, 0) + Math.max(verifyCredits, 0)
 
             const emailValue = typeof userData.email === 'string' ? userData.email : (currentProfile.email || '')
             const companyValue = typeof userData.company === 'string' ? userData.company : (currentProfile.company ?? null)
@@ -332,7 +332,7 @@ const [currentProfile, setCurrentProfile] = useState({
             <div className="flex items-center space-x-4">
               {/* Credits pill */}
               <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
-                Credits: {(currentProfile.credits_find || 0) + (currentProfile.credits_verify || 0)}
+                Credits: {Math.max(currentProfile.credits_find || 0, 0) + Math.max(currentProfile.credits_verify || 0, 0)}
               </div>
 
               {/* User menu */}
@@ -367,12 +367,12 @@ const [currentProfile, setCurrentProfile] = useState({
                     )}
                     <div className="mt-2 space-y-1">
                       <div className="flex justify-between">
-                        <span>Find Credits:</span>
-                        <span className="font-medium">{currentProfile.credits_find}</span>
+                      <span>Find Credits:</span>
+                      <span className="font-medium">{Math.max(currentProfile.credits_find || 0, 0)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Verify Credits:</span>
-                        <span className="font-medium">{currentProfile.credits_verify}</span>
+                      <span>Verify Credits:</span>
+                      <span className="font-medium">{Math.max(currentProfile.credits_verify || 0, 0)}</span>
                       </div>
                     </div>
                   </div>
