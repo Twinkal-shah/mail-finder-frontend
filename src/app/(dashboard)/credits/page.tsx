@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useMemo, memo, useEffect } from 'react'
+import { useState, useMemo, memo, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { Coins, CreditCard, ExternalLink, History, TrendingUp, Calendar, CheckCircle, Plus } from 'lucide-react'
-import { createLemonSqueezyCheckout, createCustomCreditCheckout, createLemonSqueezyPortal } from './actions'
+import { createLemonSqueezyCheckout, createLemonSqueezyPortal } from './actions'
 import { useCreditsData } from '@/hooks/useCreditsData'
 import { Line } from 'react-chartjs-2'
 import { isAuthenticated, saveRedirectUrl } from '@/lib/auth'
@@ -158,51 +158,70 @@ function CreditsPageComponent() {
     toast.error('Failed to load data')
   }
 
-  const handleSubscribe = async (plan: { name: string; price: number; period: string; findCredits: number; verifyCredits: number }) => {
-    const loadingKey = `plan-${plan.name}`
+  const [pending, startTransition] = useTransition()
+  const useProxyForCheckout = process.env.NEXT_PUBLIC_CHECKOUT_USE_PROXY === '1'
+
+  const handleSubscribe = (planName: 'pro' | 'agency' | 'lifetime') => {
+    const loadingKey = `plan-${planName}`
     setLoadingStates(prev => ({ ...prev, [loadingKey]: true }))
-    try {
-      // Create subscription checkout based on plan
-      const result = await createLemonSqueezyCheckout({
-        name: plan.name,
-        price: plan.price,
-        period: plan.period,
-        findCredits: plan.findCredits,
-        verifyCredits: plan.verifyCredits
-      })
-      if (result.url) {
-        window.open(result.url, '_blank')
-        toast.success(`Redirecting to ${plan.name} plan checkout...`)
-      } else {
-        toast.error('No checkout URL received')
+    startTransition(async () => {
+      try {
+        if (useProxyForCheckout) {
+          const res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: planName }),
+          })
+          const json = await res.json().catch(() => ({}))
+          const ls = Array.isArray(json?.data) ? json?.data?.[0] : json
+          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url || json?.data?.attributes?.url
+          if (!url) throw new Error('Checkout URL missing')
+          window.location.href = url
+        } else {
+          const ls = await createLemonSqueezyCheckout(planName)
+          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url
+          if (!url) throw new Error('Checkout URL missing')
+          window.location.href = url
+        }
+      } catch (error) {
+        console.error('Error creating subscription checkout:', error)
+        toast.error(error instanceof Error ? error.message : 'Failed to create checkout session')
+      } finally {
+        setLoadingStates(prev => ({ ...prev, [loadingKey]: false }))
       }
-    } catch (error) {
-      console.error('Error creating subscription checkout:', error)
-      toast.error('Failed to create checkout session')
-    } finally {
-      setLoadingStates(prev => ({ ...prev, [loadingKey]: false }))
-    }
+    })
   }
 
-  const handleCustomCredits = async (creditPackage: { credits: number; price: number }) => {
+  const handleBuyCredits = (creditPackage: { credits: number }) => {
+    const pkgLabel = creditPackage.credits >= 100000 ? '100k' : creditPackage.credits >= 50000 ? '50k' : creditPackage.credits >= 25000 ? '25k' : '10k'
     const loadingKey = `credits-${creditPackage.credits}`
     setLoadingStates(prev => ({ ...prev, [loadingKey]: true }))
-    try {
-      // Create custom credit checkout
-      const result = await createCustomCreditCheckout({
-        credits: creditPackage.credits,
-        price: creditPackage.price
-      })
-      if (result.url) {
-        window.open(result.url, '_blank')
-        toast.success(`Redirecting to checkout for ${creditPackage.credits.toLocaleString()} credits...`)
+    startTransition(async () => {
+      try {
+        if (useProxyForCheckout) {
+          const res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: 'credits', package: pkgLabel }),
+          })
+          const json = await res.json().catch(() => ({}))
+          const ls = Array.isArray(json?.data) ? json?.data?.[0] : json
+          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url || json?.data?.attributes?.url
+          if (!url) throw new Error('Checkout URL missing')
+          window.location.href = url
+        } else {
+          const ls = await createLemonSqueezyCheckout('credits', { package: pkgLabel })
+          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url
+          if (!url) throw new Error('Checkout URL missing')
+          window.location.href = url
+        }
+      } catch (error) {
+        console.error('Error creating custom credit checkout:', error)
+        toast.error(error instanceof Error ? error.message : 'Failed to create checkout session')
+      } finally {
+        setLoadingStates(prev => ({ ...prev, [loadingKey]: false }))
       }
-    } catch (error) {
-      console.error('Error creating custom credit checkout:', error)
-      toast.error('Failed to create checkout session')
-    } finally {
-      setLoadingStates(prev => ({ ...prev, [loadingKey]: false }))
-    }
+    })
   }
 
   const handleManageBilling = async () => {
@@ -722,7 +741,7 @@ function CreditsPageComponent() {
                     ) : (
                       <Button 
                         className="w-full"
-                        onClick={() => handleSubscribe(plan)}
+                        onClick={() => handleSubscribe(plan.name.toLowerCase() as 'pro' | 'agency' | 'lifetime')}
                         disabled={loadingStates[`plan-${plan.name}`]}
                         variant={plan.popular ? 'default' : 'outline'}
                         size="lg"
@@ -772,7 +791,7 @@ function CreditsPageComponent() {
                     {creditPackage.description}
                   </p>
                   <Button
-                    onClick={() => handleCustomCredits(creditPackage)}
+                    onClick={() => handleBuyCredits(creditPackage)}
                     disabled={loadingStates[`credits-${creditPackage.credits}`]}
                     className="w-full"
                     size="sm"

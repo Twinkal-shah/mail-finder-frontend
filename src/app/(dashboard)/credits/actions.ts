@@ -1,6 +1,6 @@
 'use server'
 
-import { getCurrentUser } from '@/lib/auth'
+import { cookies } from 'next/headers'
 import { apiGet } from '@/lib/api'
 import { LemonSqueezyWebhookEvent } from '@/lib/services/lemonsqueezy'
 
@@ -115,126 +115,78 @@ export async function getCreditUsageHistory(): Promise<CreditUsage[]> {
   }
 }
 
-export async function createLemonSqueezyCheckout(planData: {
-  name: string
-  price: number
-  period: string
-  findCredits: number
-  verifyCredits: number
-}) {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('User not authenticated')
+export async function createLemonSqueezyCheckout(
+  plan: 'pro' | 'agency' | 'lifetime' | 'credits',
+  options?: { package?: '100k' | '50k' | '25k' | '10k'; variantId?: string }
+) {
+  const token = (await cookies()).get('access_token')?.value
+  if (!token) {
+    throw new Error('Not authenticated')
   }
-  
-  // Validate plan data
-  const validPlans = {
-    'Pro': { price: 49, period: 'month', findCredits: 5000, verifyCredits: 5000 },
-    'Agency': { price: 99, period: 'month', findCredits: 50000, verifyCredits: 50000 },
-    'Lifetime': { price: 249, period: 'lifetime', findCredits: 150000, verifyCredits: 150000 }
+
+  const url = `${process.env.NEXT_PUBLIC_SERVER_URL}/api/transaction/lemonsqeezy/checkout`
+  const planMap: Record<string, string> = {
+    pro: 'Pro',
+    agency: 'Agency',
+    lifetime: 'Lifetime',
+    credits: 'Credits',
   }
-  
-  const validPlan = validPlans[planData.name as keyof typeof validPlans]
-  if (!validPlan || validPlan.price !== planData.price) {
-    throw new Error('Invalid subscription plan')
+  const backendPlan = planMap[plan] ?? 'Pro'
+  const variantMap: Record<string, string | undefined> = {
+    Pro: process.env.LEMONSQUEEZY_PRO_VARIANT_ID,
+    Agency: process.env.LEMONSQUEEZY_AGENCY_VARIANT_ID,
+    Lifetime: process.env.LEMONSQUEEZY_LIFETIME_VARIANT_ID,
   }
-  
-  try {
-    const { createLemonSqueezyCheckout: createCheckout } = await import('@/lib/services/lemonsqueezy')
-    
-    // Map plan names to LemonSqueezy variant IDs (these would be configured in your LemonSqueezy dashboard)
-    const variantIds = {
-      'Pro': process.env.LEMONSQUEEZY_PRO_VARIANT_ID || 'pro-variant-id',
-      'Agency': process.env.LEMONSQUEEZY_AGENCY_VARIANT_ID || 'agency-variant-id',
-      'Lifetime': process.env.LEMONSQUEEZY_LIFETIME_VARIANT_ID || 'lifetime-variant-id'
+  let variantId = backendPlan !== 'Credits' ? variantMap[backendPlan] : undefined
+  const bodyPayload: Record<string, unknown> = { plan: backendPlan }
+  if (backendPlan === 'Credits') {
+    const creditsVariantMap: Record<string, string | undefined> = {
+      '100k': process.env.LEMONSQUEEZY_CREDITS_100K_VARIANT_ID,
+      '50k': process.env.LEMONSQUEEZY_CREDITS_50K_VARIANT_ID,
+      '25k': process.env.LEMONSQUEEZY_CREDITS_25K_VARIANT_ID,
+      '10k': process.env.LEMONSQUEEZY_CREDITS_10K_VARIANT_ID,
     }
-    
-    const variantId = variantIds[planData.name as keyof typeof variantIds]
-    if (!variantId) {
-      throw new Error('Invalid plan selected')
-    }
-    
-    const checkoutData = {
-      productId: process.env.LEMONSQUEEZY_PRODUCT_ID || 'product-id',
-      variantId,
-      customData: {
-        plan_name: planData.name,
-        find_credits: planData.findCredits,
-        verify_credits: planData.verifyCredits,
-      },
-    }
-    
-    const result = await createCheckout(checkoutData, user.id)
-    
-    return { url: result.url }
-  } catch (error) {
-    console.error('LemonSqueezy checkout error:', error)
-    throw new Error('Failed to create checkout session')
+    const pkg = options?.package
+    const explicitVariant = options?.variantId
+    variantId = explicitVariant ?? (pkg ? creditsVariantMap[pkg] : undefined)
+    if (pkg) bodyPayload.package = pkg
   }
+  if (variantId) {
+    bodyPayload.variantId = variantId
+    const asNum = Number(variantId)
+    if (!Number.isNaN(asNum)) {
+      bodyPayload.variant_id = asNum
+      bodyPayload.enabled_variants = [asNum]
+    }
+    bodyPayload.enabledVariants = [variantId]
+    bodyPayload.variant = variantId
+  }
+  const reqInit = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(bodyPayload),
+    cache: 'no-store',
+  } as RequestInit
+
+  let res = await fetch(url, reqInit)
+  if (!res.ok && res.status >= 500) {
+    await new Promise(r => setTimeout(r, 200))
+    res = await fetch(url, reqInit)
+  }
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((json as Record<string, unknown>)?.['message'] as string || 'Failed to create checkout')
+  }
+  return (json as Record<string, unknown>)?.['data']
 }
 
-export async function createCustomCreditCheckout(creditData: {
-  credits: number
-  price: number
-}) {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-  
-  // Validate credit package data
-  const validPackages = {
-    100000: 35,
-    50000: 20,
-    25000: 12,
-    10000: 9
-  }
-  
-  const validPrice = validPackages[creditData.credits as keyof typeof validPackages]
-  if (!validPrice || validPrice !== creditData.price) {
-    throw new Error('Invalid credit package')
-  }
-  
-  try {
-    const { createLemonSqueezyCheckout: createCheckout } = await import('@/lib/services/lemonsqueezy')
-    
-    // Map credit amounts to LemonSqueezy variant IDs
-    const creditVariantIds = {
-      100000: process.env.LEMONSQUEEZY_CREDITS_100K_VARIANT_ID || 'credits-100k-variant-id',
-      50000: process.env.LEMONSQUEEZY_CREDITS_50K_VARIANT_ID || 'credits-50k-variant-id',
-      25000: process.env.LEMONSQUEEZY_CREDITS_25K_VARIANT_ID || 'credits-25k-variant-id',
-      10000: process.env.LEMONSQUEEZY_CREDITS_10K_VARIANT_ID || 'credits-10k-variant-id'
-    }
-    
-    const variantId = creditVariantIds[creditData.credits as keyof typeof creditVariantIds]
-    if (!variantId) {
-      throw new Error('Invalid credit package selected')
-    }
-    
-    const result = await createCheckout(
-      {
-        productId: process.env.LEMONSQUEEZY_CREDITS_PRODUCT_ID || 'credits-product-id',
-        variantId,
-        customData: {
-          credits: creditData.credits,
-          package_type: 'credits',
-        },
-      },
-      user.id
-    )
-    
-    return { url: result.url }
-  } catch (error) {
-    console.error('Mock checkout error:', error)
-    throw new Error('Failed to create checkout session')
-  }
-}
+// Deprecated: use createLemonSqueezyCheckout('credits') from client
 
 export async function createLemonSqueezyPortal() {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
   // Get user's profile including plan information from backend
   interface ProfileResponse {
     plan?: string
@@ -267,11 +219,42 @@ export async function createLemonSqueezyPortal() {
 // Mock transaction history for demo
 export async function getTransactionHistory(): Promise<Transaction[]> {
   try {
-    // Mock implementation - return empty array for now
-    // TODO: Implement actual transaction history fetching
-    return []
+    const token = (await cookies()).get('access_token')?.value
+    if (!token) {
+      return []
+    }
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/transaction/getMyTransaction`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      return []
+    }
+    const payload = await res.json().catch(() => ({}))
+    const raw = Array.isArray(payload) ? payload : (Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.transactions) ? payload.transactions : []))
+    if (!Array.isArray(raw)) {
+      return []
+    }
+    const mapped: Transaction[] = raw.map((t: Record<string, unknown>) => ({
+      id: String(t['id'] ?? t['_id'] ?? ''),
+      user_id: String(t['user_id'] ?? t['userId'] ?? ''),
+      lemonsqueezy_order_id: (t['lemonsqueezy_order_id'] ?? t['order_id'] ?? undefined) as string | undefined,
+      lemonsqueezy_subscription_id: (t['lemonsqueezy_subscription_id'] ?? t['subscription_id'] ?? undefined) as string | undefined,
+      product_name: String(t['product_name'] ?? t['productName'] ?? t['plan_name'] ?? 'Unknown'),
+      product_type: String(t['product_type'] ?? t['type'] ?? 'credit_pack'),
+      amount: Number(t['amount'] ?? 0),
+      credits_find_added: Number(t['credits_find_added'] ?? t['find_credits'] ?? 0),
+      credits_verify_added: Number(t['credits_verify_added'] ?? t['verify_credits'] ?? 0),
+      status: String(t['status'] ?? t['payment_status'] ?? 'completed'),
+      webhook_event: String(t['webhook_event'] ?? ''),
+      metadata: (t['metadata'] as Record<string, unknown>) ?? undefined,
+      created_at: String(t['created_at'] ?? t['createdAt'] ?? new Date().toISOString()),
+    }))
+    return mapped
   } catch (error) {
-    console.error('Get transactions error:', error)
     return []
   }
 }
