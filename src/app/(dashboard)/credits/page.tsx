@@ -178,8 +178,8 @@ function CreditsPageComponent() {
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         } else {
-          const ls = await createLemonSqueezyCheckout(planName)
-          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url
+          const ls = await createLemonSqueezyCheckout(planName) as { attributes?: { url?: string; checkout_url?: string } }
+          const url = ls?.attributes?.url || ls?.attributes?.checkout_url
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         }
@@ -210,8 +210,8 @@ function CreditsPageComponent() {
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         } else {
-          const ls = await createLemonSqueezyCheckout('credits', { package: pkgLabel })
-          const url = ls?.data?.attributes?.url || ls?.data?.attributes?.checkout_url
+          const ls = await createLemonSqueezyCheckout('credits', { package: pkgLabel }) as { attributes?: { url?: string; checkout_url?: string } }
+          const url = ls?.attributes?.url || ls?.attributes?.checkout_url
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         }
