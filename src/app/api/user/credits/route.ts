@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(req: NextRequest) {
-  const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+  const backend = process.env.NEXT_PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
   const url = `${backend}/api/user/profile/getCredits`
   const cookie = req.headers.get('cookie') || ''
   const auth = req.headers.get('authorization') || ''
   const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
   try {
-    const creditsProfileRes = await fetch('http://localhost:3000/api/user/profile/getCredits', {
+    const origin = req.nextUrl.origin
+    const creditsProfileRes = await fetch(`${origin}/api/user/profile/getCredits`, {
       method: 'GET',
       headers: {
         ...(cookie && { Cookie: cookie }),
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ credits_find: find, credits_verify: verify, find, verify, total_credits: find + verify })
     }
 
-    const profileRes = await fetch('http://localhost:3000/api/user/profile/getProfile', {
+    const profileRes = await fetch(`${origin}/api/user/profile/getProfile`, {
       method: 'GET',
       headers: {
         ...(cookie && { Cookie: cookie }),

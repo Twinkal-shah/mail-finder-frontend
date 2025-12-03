@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+  const backend = process.env.NEXT_PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
   const url = `${backend}/api/email/verifyEmail`
   const cookie = req.headers.get('cookie') || ''
   const auth = req.headers.get('authorization') || ''
@@ -9,16 +9,28 @@ export async function POST(req: NextRequest) {
   const accessToken = await getAccessTokenFromCookies()
   
   try {
-    const body = await req.text()
+    const inboundType = req.headers.get('content-type') || ''
+    let outBody: string
+    let outType: string
+    if (inboundType.includes('application/json')) {
+      const json = await req.json() as { email?: string }
+      const params = new URLSearchParams()
+      if (json.email) params.set('email', json.email)
+      outBody = params.toString()
+      outType = 'application/x-www-form-urlencoded'
+    } else {
+      outBody = await req.text()
+      outType = inboundType || 'application/x-www-form-urlencoded'
+    }
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         ...(cookie ? { Cookie: cookie } : {}),
         ...(auth ? { Authorization: auth } : {}),
         ...(accessToken && !auth ? { Authorization: `Bearer ${accessToken}` } : {}),
-        'content-type': 'application/json'
+        'content-type': outType
       },
-      body,
+      body: outBody,
     })
     
     const contentType = res.headers.get('content-type') || 'application/json'

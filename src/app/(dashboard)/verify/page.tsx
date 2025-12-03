@@ -122,6 +122,7 @@ export default function VerifyPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',   // <-- VERY IMPORTANT
         body: JSON.stringify({ email: singleEmail }),
       })
       

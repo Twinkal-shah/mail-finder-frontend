@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(req: NextRequest) {
-  const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+  const backend = process.env.NEXT_PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
   const url = `${backend}/api/user/profile/getProfile`
   const cookie = req.headers.get('cookie') || ''
   const auth = req.headers.get('authorization') || ''

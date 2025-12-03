@@ -70,62 +70,63 @@ export async function findEmailMock(request: EmailFinderRequest): Promise<EmailF
  * Real email finder function using external API with timeout and retry logic
  */
 export async function findEmailReal(request: EmailFinderRequest): Promise<EmailFinderResult> {
-  const apiUrl = 'http://server.mailsfinder.com:8081'
   const maxRetries = 3
-  const timeoutMs = 30000 // 30 seconds timeout
-  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Create AbortController for timeout
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-      
-      const response = await fetch(`${apiUrl}/find`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          names: [request.full_name],
-          domain: request.domain
-        }),
-        signal: controller.signal
-      })
-      
-      clearTimeout(timeoutId)
-      
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`)
+      const { apiPost } = await import('@/lib/api')
+      const { getAccessTokenFromCookies } = await import('@/lib/auth-server')
+      const token = await getAccessTokenFromCookies()
+      const res = await apiPost<unknown>('/api/email/findEmail', {
+        full_name: request.full_name,
+        domain: request.domain,
+        role: request.role
+      }, { useProxy: true, includeAuth: true, token })
+      if (!res.ok) {
+        throw new Error(`API request failed: ${res.status}`)
       }
-      
-      const data = await response.json()
-      const payload = typeof data?.result === 'object' && data.result !== null ? data.result : data
-      const rawStatus = typeof payload?.status === 'string' ? payload.status : (typeof data?.status === 'string' ? data.status : undefined)
-      const email: string | null = typeof payload?.email === 'string' ? payload.email : null
+      const raw = res.data as unknown
+      let root: Record<string, unknown>
+      if (typeof raw === 'string') {
+        try {
+          root = JSON.parse(raw) as Record<string, unknown>
+        } catch {
+          root = { message: raw } as Record<string, unknown>
+        }
+      } else {
+        root = raw as Record<string, unknown>
+      }
+      const payload = (typeof root?.data === 'object' && root.data !== null)
+        ? (root.data as Record<string, unknown>)
+        : (typeof root?.result === 'object' && root.result !== null)
+          ? (root.result as Record<string, unknown>)
+          : root
+      const email = typeof payload?.email === 'string' ? (payload.email as string) : null
+      const rawStatus = typeof payload?.status === 'string' ? (payload.status as string) : (typeof root?.status === 'string' ? (root.status as string) : undefined)
+      const successFlag = typeof root?.success === 'boolean' ? (root.success as boolean) : undefined
       let normalizedStatus: 'valid' | 'invalid' | 'error'
       if (email) {
         normalizedStatus = 'valid'
       } else if (rawStatus) {
         const s = rawStatus.toLowerCase()
-        if (s === 'valid' || s === 'found' || s === 'success') {
-          normalizedStatus = 'valid'
-        } else if (s === 'invalid' || s === 'not_found' || s === 'failed') {
-          normalizedStatus = 'invalid'
-        } else {
-          normalizedStatus = 'error'
-        }
+        if (s === 'valid' || s === 'found' || s === 'success') normalizedStatus = 'valid'
+        else if (s === 'invalid' || s === 'not_found' || s === 'failed') normalizedStatus = 'invalid'
+        else normalizedStatus = 'error'
+      } else if (successFlag !== undefined) {
+        normalizedStatus = successFlag ? 'invalid' : 'error'
       } else {
         normalizedStatus = 'invalid'
       }
-      const confidence = typeof payload?.confidence === 'number' ? payload.confidence : (normalizedStatus === 'valid' ? 95 : 0)
-      const message = typeof payload?.message === 'string' ? payload.message : (normalizedStatus === 'valid' ? 'Email found' : normalizedStatus === 'invalid' ? 'No email found' : 'Email search completed')
-      const catch_all = typeof payload?.catch_all === 'boolean' ? payload.catch_all : data?.catch_all
-      const connections = typeof payload?.connections === 'number' ? payload.connections : data?.connections
-      const domain = typeof payload?.domain === 'string' ? payload.domain : (typeof data?.domain === 'string' ? data.domain : undefined)
-      const mx = typeof payload?.mx === 'string' ? payload.mx : (typeof data?.mx === 'string' ? data.mx : undefined)
-      const time_exec = typeof payload?.time_exec === 'number' ? payload.time_exec : data?.time_exec
-      const user_name = typeof payload?.user_name === 'string' ? payload.user_name : (typeof data?.user_name === 'string' ? data.user_name : undefined)
-      const ver_ops = typeof payload?.ver_ops === 'number' ? payload.ver_ops : data?.ver_ops
+      const confidence = typeof payload?.confidence === 'number' ? (payload.confidence as number) : (normalizedStatus === 'valid' ? 95 : 0)
+      const rootMessage = typeof root?.message === 'string' ? (root.message as string) : undefined
+      const payloadMessage = typeof payload?.message === 'string' ? (payload.message as string) : undefined
+      const message = rootMessage || payloadMessage || (normalizedStatus === 'valid' ? 'Email found' : normalizedStatus === 'invalid' ? 'No email found' : 'Email search completed')
+      const catch_all = typeof payload?.catch_all === 'boolean' ? (payload.catch_all as boolean) : (root?.catch_all as boolean | undefined)
+      const connections = typeof payload?.connections === 'number' ? (payload.connections as number) : (root?.connections as number | undefined)
+      const domain = typeof payload?.domain === 'string' ? (payload.domain as string) : (typeof root?.domain === 'string' ? (root.domain as string) : undefined)
+      const mx = typeof payload?.mx === 'string' ? (payload.mx as string) : (typeof root?.mx === 'string' ? (root.mx as string) : undefined)
+      const time_exec = typeof payload?.time_exec === 'number' ? (payload.time_exec as number) : (root?.time_exec as number | undefined)
+      const user_name = typeof payload?.user_name === 'string' ? (payload.user_name as string) : (typeof root?.user_name === 'string' ? (root.user_name as string) : undefined)
+      const ver_ops = typeof payload?.ver_ops === 'number' ? (payload.ver_ops as number) : (root?.ver_ops as number | undefined)
       return {
         email,
         confidence,
@@ -141,44 +142,18 @@ export async function findEmailReal(request: EmailFinderRequest): Promise<EmailF
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      const isTimeout = error instanceof Error && error.name === 'AbortError'
-      const isConnectionRefused = errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')
-      
-      console.error(`🔥 Email finder API error (attempt ${attempt}/${maxRetries}) for ${request.full_name} @ ${request.domain}:`, {
-        error: errorMessage,
-        isTimeout,
-        isConnectionRefused,
-        errorType: error instanceof Error ? error.name : 'Unknown'
-      })
-      
-      // If this is the last attempt, return error result
       if (attempt === maxRetries) {
-        let finalMessage = 'Failed to find email due to API error'
-        
-        if (isTimeout) {
-          finalMessage = 'Request timed out after 30 seconds'
-        } else if (isConnectionRefused) {
-          finalMessage = 'Unable to connect to email finder service'
-        } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-          finalMessage = 'Rate limit exceeded - too many requests'
-        }
-        
         return {
           email: null,
           confidence: 0,
           status: 'error',
-          message: finalMessage
+          message: errorMessage.includes('timeout') ? 'Request timed out after 30 seconds' : 'Failed to find email due to API error'
         }
       }
-      
-      // Wait before retrying (exponential backoff)
       const backoffDelay = Math.pow(2, attempt) * 1000
-      console.log(`⏳ Retrying in ${backoffDelay}ms...`)
       await new Promise(resolve => setTimeout(resolve, backoffDelay))
     }
   }
-  
-  // This should never be reached, but just in case
   return {
     email: null,
     confidence: 0,

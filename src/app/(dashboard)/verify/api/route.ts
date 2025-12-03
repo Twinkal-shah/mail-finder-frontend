@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Check if plan has expired and get credits from profile data
-    const backend = process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
+    const backend = process.env.NEXT_PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
     const cookie = request.headers.get('cookie') || ''
     const accessToken = await getAccessTokenFromCookies()
     

@@ -56,7 +56,20 @@ export async function getUserCredits(): Promise<{
       }
     })
 
-    if (!res.ok || !res.data) return null
+    if (!res.ok || !res.data) {
+      const { getCurrentUserFromCookies } = await import('@/lib/auth-server')
+      const user = await getCurrentUserFromCookies()
+      if (user) {
+        const findFallback = Number((user as Record<string, unknown>).credits_find ?? 0)
+        const verifyFallback = Number((user as Record<string, unknown>).credits_verify ?? 0)
+        return {
+          total: findFallback + verifyFallback,
+          find: findFallback,
+          verify: verifyFallback
+        }
+      }
+      return null
+    }
 
     const d = res.data as CreditsResponse
 

@@ -10,31 +10,22 @@ interface RequestOptions {
 }
 
 function getBackendBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_LOCAL_URL || 'http://localhost:8000'
-}
-
-function getAppBaseUrl(): string {
-  // Prefer explicit app URL for server-side absolute fetches
-  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null
   return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    vercelUrl ||
-    process.env.NEXT_PUBLIC_LOCAL_FRONTEND_URL ||
-    'http://localhost:3000'
+    process.env.NEXT_PUBLIC_SERVER_URL ||
+    process.env.NEXT_PUBLIC_LOCAL_URL ||
+    process.env.NEXT_PUBLIC_CORE_API_BASE ||
+    'http://localhost:8000'
   )
 }
 
+
+
 function resolveUrl(path: string, useProxy?: boolean): string {
   if (path.startsWith('http://') || path.startsWith('https://')) return path
-  const isServer = typeof window === 'undefined'
   if (useProxy || path.startsWith('/api/')) {
-    // In server environments, absolute URL is required
-    if (isServer) {
-      const base = getAppBaseUrl().replace(/\/$/, '')
-      const p = path.startsWith('/') ? path : `/${path}`
-      return `${base}${p}`
-    }
-    return path
+    // Prefer relative path so Next.js routes to current origin/port
+    const p = path.startsWith('/') ? path : `/${path}`
+    return p
   }
   const base = getBackendBaseUrl().replace(/\/$/, '')
   const p = path.startsWith('/') ? path : `/${path}`
@@ -51,7 +42,7 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
     token
   } = options
 
-  const url = resolveUrl(path, useProxy)
+  let url = resolveUrl(path, useProxy)
 
   const finalHeaders: Record<string, string> = { ...headers }
   if (body != null && !finalHeaders['Content-Type']) {
@@ -71,12 +62,13 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
   const isServer = typeof window === 'undefined'
   if (isServer && (useProxy || path.startsWith('/api/'))) {
     try {
-      const { cookies } = await import('next/headers')
-      const cookieStore = await cookies()
-      if (cookieStore && !finalHeaders['Cookie']) {
-        // Forward the full cookie header so API routes can read user session
-        finalHeaders['Cookie'] = cookieStore.toString()
+      const { cookies, headers } = await import('next/headers')
+      const h = await headers()
+      const cookieHeader = h.get('cookie')
+      if (cookieHeader && !finalHeaders['Cookie']) {
+        finalHeaders['Cookie'] = cookieHeader
       }
+      const cookieStore = await cookies()
       if (includeAuth && !finalHeaders['Authorization']) {
         const tokenCookie = cookieStore.get('access_token')?.value
         if (tokenCookie) {
@@ -86,6 +78,16 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
     } catch {
       // Silently ignore if cookies are not available in this context
     }
+  }
+
+  if (isServer && url.startsWith('/')) {
+    try {
+      const { headers } = await import('next/headers')
+      const h = await headers()
+      const proto = h.get('x-forwarded-proto') || 'http'
+      const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000'
+      url = `${proto}://${host}${url}`
+    } catch {}
   }
 
   const res = await fetch(url, {
@@ -99,11 +101,12 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
   const contentType = res.headers.get('content-type') || ''
   const rawText = await res.text()
   let data: unknown = undefined
-  if (contentType.includes('application/json')) {
+  const looksJson = rawText.trim().startsWith('{') || rawText.trim().startsWith('[')
+  if (contentType.includes('application/json') || looksJson) {
     try {
       data = JSON.parse(rawText)
     } catch {
-      // If JSON parsing fails, keep raw text
+      // keep raw text if parsing fails
     }
   }
 
