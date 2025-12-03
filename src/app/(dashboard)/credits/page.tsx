@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { Coins, CreditCard, ExternalLink, History, TrendingUp, Calendar, CheckCircle, Plus } from 'lucide-react'
-import { createLemonSqueezyCheckout, createLemonSqueezyPortal } from './actions'
+import { createLemonSqueezyCheckout, createLemonSqueezyPortal, createCustomCreditCheckout } from './actions'
 import { useCreditsData } from '@/hooks/useCreditsData'
 import { Line } from 'react-chartjs-2'
 import { isAuthenticated, saveRedirectUrl } from '@/lib/auth'
@@ -178,8 +178,9 @@ function CreditsPageComponent() {
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         } else {
-          const ls = await createLemonSqueezyCheckout(planName) as { attributes?: { url?: string; checkout_url?: string } }
-          const url = ls?.attributes?.url || ls?.attributes?.checkout_url
+          const planObj = pricingPlans.find(p => p.name.toLowerCase() === planName)
+          if (!planObj) throw new Error('Invalid plan selected')
+          const { url } = await createLemonSqueezyCheckout(planObj)
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         }
@@ -210,8 +211,9 @@ function CreditsPageComponent() {
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         } else {
-          const ls = await createLemonSqueezyCheckout('credits', { package: pkgLabel }) as { attributes?: { url?: string; checkout_url?: string } }
-          const url = ls?.attributes?.url || ls?.attributes?.checkout_url
+          const pkg = customCreditPackages.find(p => p.credits === creditPackage.credits)
+          if (!pkg) throw new Error('Invalid credit package')
+          const { url } = await createCustomCreditCheckout({ credits: pkg.credits, price: pkg.price })
           if (!url) throw new Error('Checkout URL missing')
           window.location.href = url
         }
